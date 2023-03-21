@@ -41,10 +41,18 @@
 #include <driver/i2s.h>
 #include "sos-iir-filter.h"
 #include <FastLED.h>
+#include <IRremoteESP8266.h>
+#include <IRrecv.h>
+#include <IRutils.h>
 
 //
 // Configuration
 //
+
+// Define IR
+const uint16_t kRecvPin = 4;
+IRrecv irrecv(kRecvPin);
+decode_results results;
 
 // Define FastLED
 #define LED_TYPE NEOPIXEL
@@ -306,6 +314,14 @@ void setup() {
   Serial.begin(112500);
   delay(1000); // Safety
 
+  // IR setup
+  irrecv.enableIRIn();  // Start the receiver
+  while (!Serial)  // Wait for the serial connection to be establised.
+    delay(50);
+  Serial.println();
+  Serial.print("IRrecvDemo is now running and waiting for IR message on Pin ");
+  Serial.println(kRecvPin);
+
   // Create FreeRTOS queue
   samples_queue = xQueueCreate(8, sizeof(sum_queue_t));
   
@@ -362,6 +378,14 @@ void setup() {
         fill_solid( leds, NUM_LEDS, CRGB::Red);
         FastLED.delay(500);
       }
+
+      if (irrecv.decode(&results)) {
+        // print() & println() can't handle printing long longs. (uint64_t)
+        serialPrintUint64(results.value, HEX);
+        Serial.println("");
+        irrecv.resume();  // Receive the next value
+      }
+      delay(100);
 
     }
   }
