@@ -46,11 +46,12 @@
 // Configuration
 //
 
+// Define FastLED
 #define LED_TYPE NEOPIXEL
 #define NUM_LEDS 7                    // How many LEDs are attached to the Arduino?
 #define DATA_PIN 2                    // Which pin on the Arduino is connected to the LEDs?
 CRGB leds[NUM_LEDS];
-int brightness = 20;                  // LED brightness, 0 (min) to 255 (max)
+int brightness = 5;                  // LED brightness, 0 (min) to 255 (max)
 
 #define LEQ_PERIOD        1           // second(s)
 #define WEIGHTING         A_weighting // Also avaliable: 'C_weighting' or 'None' (Z_weighting)
@@ -68,7 +69,6 @@ int brightness = 20;                  // LED brightness, 0 (min) to 255 (max)
 #define MIC_NOISE_DB      29          // dB - Noise floor
 #define MIC_BITS          24          // valid number of bits in I2S data
 #define MIC_CONVERT(s)    (s >> (SAMPLE_BITS - MIC_BITS))
-#define MIC_TIMING_SHIFT  0           // Set to one to fix MSB timing for some microphones, i.e. SPH0645LM4H-x
 
 // Calculate reference amplitude value at compile time
 constexpr double MIC_REF_AMPL = pow(10, double(MIC_SENSITIVITY)/20) * ((1<<(MIC_BITS-1))-1);
@@ -209,13 +209,6 @@ void mic_i2s_init() {
   };
 
   i2s_driver_install(I2S_PORT, &i2s_config, 0, NULL);
-
-  #if (MIC_TIMING_SHIFT > 0) 
-    // Undocumented (?!) manipulation of I2S peripheral registers
-    // to fix MSB timing issues with some I2S microphones
-    REG_SET_BIT(I2S_TIMING_REG(I2S_PORT), BIT(9));   
-    REG_SET_BIT(I2S_CONF_REG(I2S_PORT), I2S_RX_MSB_SHIFT);  
-  #endif
   
   i2s_set_pin(I2S_PORT, &pin_config);
 
@@ -360,15 +353,12 @@ void setup() {
       // Serial.printf("%u processing ticks\n", q.proc_ticks);
 
       if (Leq_dB < 40) {
-        // leds[0] = CRGB::Green; FastLED.show();
         fill_solid( leds, NUM_LEDS, CRGB::Green);
         FastLED.delay(500);
       } else if (Leq_dB < 60) {
-        // leds[0] = CRGB::Yellow; FastLED.show();
         fill_solid( leds, NUM_LEDS, CRGB::Yellow);
         FastLED.delay(500);
       } else {
-        // leds[0] = CRGB::Red; FastLED.show();
         fill_solid( leds, NUM_LEDS, CRGB::Red);
         FastLED.delay(500);
       }
