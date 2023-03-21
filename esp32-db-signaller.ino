@@ -107,18 +107,6 @@ constexpr double MIC_REF_AMPL = pow(10, double(MIC_SENSITIVITY) / 20) * ((1 << (
 #define I2S_PORT I2S_NUM_0
 
 //
-// IIR Filters
-//
-
-// DC-Blocker filter - removes DC component from I2S data
-// See: https://www.dsprelated.com/freebooks/filters/DC_Blocker.html
-// a1 = -0.9992 should heavily attenuate frequencies below 10Hz
-SOS_IIR_Filter DC_BLOCKER = {
-  gain : 1.0,
-  sos : {{-1.0, 0.0, +0.9992, 0}}
-};
-
-//
 // Equalizer IIR filters to flatten microphone frequency response
 // See respective .m file for filter design. Fs = 48Khz.
 //
@@ -158,19 +146,6 @@ SOS_IIR_Filter A_weighting = {
 };
 
 //
-// C-weighting IIR Filter, Fs = 48KHz
-// Designed by invfreqz curve-fitting, see respective .m file
-// B = [-0.49164716933714026, 0.14844753846498662, 0.74117815661529129, -0.03281878334039314, -0.29709276192593875, -0.06442545322197900, -0.00364152725482682]
-// A = [1.0, -1.0325358998928318, -0.9524000181023488, 0.8936404694728326   0.2256286147169398  -0.1499917107550188, 0.0156718181681081]
-SOS_IIR_Filter C_weighting = {
-  gain : -0.491647169337140,
-  sos : {
-      {+1.4604385758204708, +0.5275070373815286, +1.9946144559930252, -0.9946217070140883},
-      {+0.2376222404939509, +0.0140411206016894, -1.3396585608422749, -0.4421457807694559},
-      {-2.0000000000000000, +1.0000000000000000, +0.3775800047420818, -0.0356365756680430}}
-};
-
-//
 // Sampling
 //
 #define SAMPLE_RATE 48000 // Hz, fixed to design of IIR filters
@@ -199,8 +174,7 @@ float samples[SAMPLES_SHORT] __attribute__((aligned(4)));
 //
 // I2S Microphone sampling setup
 //
-void mic_i2s_init()
-{
+void mic_i2s_init() {
   // Setup I2S to sample mono channel for SAMPLE_RATE * SAMPLE_BITS
   // NOTE: Recent update to Arduino_esp32 (1.0.2 -> 1.0.3)
   //       seems to have swapped ONLY_LEFT and ONLY_RIGHT channels
@@ -228,26 +202,17 @@ void mic_i2s_init()
   i2s_driver_install(I2S_PORT, &i2s_config, 0, NULL);
 
   i2s_set_pin(I2S_PORT, &pin_config);
-
-  // FIXME: There is a known issue with esp-idf and sampling rates, see:
-  //        https://github.com/espressif/esp-idf/issues/2634
-  //        In the meantime, the below line seems to set sampling rate at ~47999.992Hz
-  //        fifs_req=24576000, sdm0=149, sdm1=212, sdm2=5, odir=2 -> fifs_reached=24575996
-  // NOTE:  This seems to be fixed in ESP32 Arduino 1.0.4, esp-idf 3.2
-  //        Should be safe to remove...
-  // #include <soc/rtc.h>
-  // rtc_clk_apll_enable(1, 149, 212, 5, 2);
 }
 
 //
 // I2S Reader Task
 //
 // Rationale for separate task reading I2S is that IIR filter
-// processing cam be scheduled to different core on the ESP32
+// processing can be scheduled to different core on the ESP32
 // while main task can do something else, like update the
 // display in the example
 //
-// As this is intended to run as separate hihg-priority task,
+// As this is intended to run as separate high-priority task,
 // we only do the minimum required work with the I2S data
 // until it is 'compressed' into sum of squares
 //
@@ -328,9 +293,6 @@ void setup() {
   irrecv.enableIRIn(); // Start the receiver
   while (!Serial)      // Wait for the serial connection to be establised.
     delay(50);
-  Serial.println();
-  Serial.print("IRrecvDemo is now running and waiting for IR message on Pin ");
-  Serial.println(kRecvPin);
 
   // Create FreeRTOS queue
   samples_queue = xQueueCreate(8, sizeof(sum_queue_t));
@@ -358,26 +320,21 @@ void setup() {
     if (irrecv.decode(&results)) {
       String IR_val = String(results.value, HEX);
       if (IR_val == dB_min_up) {
-        Serial.println(IR_val);
-        Serial.printf("Current dB_min value: %u\n", dB_min);
         dB_min++;
         preferences.putUInt("dB_min", dB_min);
       } else if (IR_val == dB_min_dn) {
-        Serial.println(IR_val);
         dB_min--;
-        Serial.printf("Current dB_min value: %u\n", dB_min);
         preferences.putUInt("dB_min", dB_min);
       } else if (IR_val == dB_max_up) {
-        Serial.println(IR_val);
         dB_max++;
-        Serial.printf("Current dB_max value: %u\n", dB_max);
         preferences.putUInt("dB_max", dB_max);
       } else if (IR_val == dB_max_dn) {
-        Serial.println(IR_val);
         dB_max--;
-        Serial.printf("Current dB_max value: %u\n", dB_max);
         preferences.putUInt("dB_max", dB_max);
       }
+      // Serial.println(IR_val);
+      Serial.printf("Current dB_min value: %u\n", dB_min);
+      Serial.printf("Current dB_max value: %u\n", dB_max);
       irrecv.resume(); // Receive the next value
     }
     delay(100);
@@ -407,7 +364,7 @@ void setup() {
       Leq_samples = 0;
 
       // Serial output, customize (or remove) as needed
-      Serial.printf("%.1f\n", Leq_dB);
+      Serial.printf("Current dB value: %.1f\n", Leq_dB);
 
       // Debug only
       // Serial.printf("%u processing ticks\n", q.proc_ticks);
