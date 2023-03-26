@@ -155,7 +155,7 @@ struct SOS_IIR_Filter {
    * Apply defined IIR Filter to input array of floats, write filtered values to output, 
    * and return sum of squares of all filtered values 
    */
-  inline float filter(float* input, float* output, size_t len) {
+ inline float filter(float* input, float* output, size_t len) {
     if ((num_sos < 1) || (sos == NULL) || (w == NULL)) return 0;
     float* source = input; 
     // Apply all but last Second-Order-Section 
@@ -165,7 +165,7 @@ struct SOS_IIR_Filter {
     }      
     // Apply last SOS with gain and return the sum of squares of all samples  
     return sos_filter_sum_sqr_f32(source, output, len, sos[num_sos-1], w[num_sos-1], gain);
-  }
+  } 
 
   ~SOS_IIR_Filter() {
     if (w != NULL) delete[] w;

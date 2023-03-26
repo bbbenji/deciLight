@@ -38,41 +38,38 @@
  * response and numeric LAeq(1sec) dB value from the signal RMS.
  */
 
-#include <driver/i2s.h>
-#include "sos-iir-filter.h"
-#include <FastLED.h>
-#include <IRremoteESP8266.h>
-#include <IRrecv.h>
-#include <IRutils.h>
-#include <Preferences.h>
-
 //
 // Configuration
 //
 
+int deciLight = 1;
+
 // Define IR
+#include <IRremoteESP8266.h>
+#include <IRrecv.h>
+#include <IRutils.h>
 const uint16_t kRecvPin = 4;
 IRrecv irrecv(kRecvPin);
 decode_results results;
-String dB_min_up = "490";
-String dB_min_dn = "c90";
-String dB_max_up = "e90";
-String dB_max_dn = "ae9";
 
 // Define FastLED
+#include <FastLED.h>
 #define LED_TYPE NEOPIXEL
 #define NUM_LEDS 7 // How many LEDs are attached to the Arduino?
 #define DATA_PIN 2 // Which pin on the Arduino is connected to the LEDs?
+int brightness = 255; // LED brightness, 0 (min) to 255 (max)
 CRGB leds[NUM_LEDS];
-int brightness = 5; // LED brightness, 0 (min) to 255 (max)
 
 // Define preferences
+#include <Preferences.h>
 Preferences preferences;
 int dB_min_default = 40;
 int dB_max_default = 60;
 
 // Define mic
-#define LEQ_PERIOD 1          // second(s)
+#include <driver/i2s.h>
+#include "sos-iir-filter.h"
+#define LEQ_PERIOD 0.5        // second(s)
 #define WEIGHTING A_weighting // Also avaliable: 'C_weighting' or 'None' (Z_weighting)
 #define LEQ_UNITS "LAeq"      // customize based on above weighting used
 #define DB_UNITS "dBA"        // customize based on above weighting used
@@ -277,7 +274,7 @@ void setup() {
   FastLED.setDither(false);
   FastLED.setCorrection(TypicalLEDStrip);
   FastLED.setBrightness(brightness);
-  FastLED.setMaxPowerInVoltsAndMilliamps(5, 400);
+  FastLED.setMaxPowerInVoltsAndMilliamps(5, 420);
   set_max_power_indicator_LED(13);
   fill_solid(leds, NUM_LEDS, CRGB::Black);
   FastLED.show();
@@ -286,7 +283,7 @@ void setup() {
   // i.e. if you want to (slightly) reduce ESP32 power consumption
   setCpuFrequencyMhz(80); // It should run as low as 80MHz
 
-  Serial.begin(112500);
+  Serial.begin(115200);
   delay(1000); // Safety
 
   // IR setup
@@ -304,6 +301,11 @@ void setup() {
   //       For manual control see: xTaskCreatePinnedToCore
   xTaskCreate(mic_i2s_reader_task, "Mic I2S Reader", I2S_TASK_STACK, NULL, I2S_TASK_PRI, NULL);
 
+
+}
+
+void loop() {
+
   sum_queue_t q;
   uint32_t Leq_samples = 0;
   double Leq_sum_sqr = 0;
@@ -318,23 +320,174 @@ void setup() {
     unsigned int dB_max = preferences.getUInt("dB_max", dB_max_default);
 
     if (irrecv.decode(&results)) {
-      String IR_val = String(results.value, HEX);
-      if (IR_val == dB_min_up) {
-        dB_min++;
-        preferences.putUInt("dB_min", dB_min);
-      } else if (IR_val == dB_min_dn) {
-        dB_min--;
-        preferences.putUInt("dB_min", dB_min);
-      } else if (IR_val == dB_max_up) {
-        dB_max++;
-        preferences.putUInt("dB_max", dB_max);
-      } else if (IR_val == dB_max_dn) {
-        dB_max--;
-        preferences.putUInt("dB_max", dB_max);
+      switch (results.value) {
+        case 0xF700FF:
+          // Serial.println("Bright+");
+          if (brightness < 204) {
+            brightness = brightness + 51;
+          } else {
+            brightness = 255;
+          }
+          FastLED.setBrightness(brightness);
+          FastLED.show();
+          break;
+        case 0xF7807F:
+          // Serial.println("Bright-");
+          if (brightness > 51) {
+            brightness = brightness - 51;
+          } else {
+            brightness = 10;
+          }
+          FastLED.setBrightness(brightness);
+          FastLED.show();
+          break;
+        case 0xF740BF:
+          // Serial.println("Off");
+          deciLight = 0;
+          fill_solid(leds, NUM_LEDS, CRGB::Black);
+          FastLED.show();
+          break;
+        case 0xF7C03F:
+          // Serial.println("On");
+          deciLight = 1;
+          break;
+        case 0xF720DF:
+          // Serial.println("Red");
+          deciLight = 0;
+          fill_solid(leds, NUM_LEDS, CRGB::Red);
+          FastLED.show();
+          break;
+        case 0xF7A05F:
+          // Serial.println("Green");
+          deciLight = 0;
+          fill_solid(leds, NUM_LEDS, CRGB::Green);
+          FastLED.show();
+          break;
+        case 0xF7609F:
+          // Serial.println("Blue");
+          deciLight = 0;
+          fill_solid(leds, NUM_LEDS, CRGB::Blue);
+          FastLED.show();
+          break;
+        case 0xF7E01F:
+          // Serial.println("White");
+          deciLight = 0;
+          fill_solid(leds, NUM_LEDS, CRGB::White);
+          FastLED.show();
+          break;
+        case 0xF710EF:
+          // Serial.println("Tomato");
+          deciLight = 0;
+          fill_solid(leds, NUM_LEDS, CRGB::Tomato);
+          FastLED.show();
+          break;
+        case 0xF7906F:
+          // Serial.println("LightGreen");
+          deciLight = 0;
+          fill_solid(leds, NUM_LEDS, CRGB::LightGreen);
+          FastLED.show();
+          break;
+        case 0xF750AF:
+          // Serial.println("SkyBlue");
+          deciLight = 0;
+          fill_solid(leds, NUM_LEDS, CRGB::SkyBlue);
+          FastLED.show();
+          break;
+        case 0xF7D02F:
+          // Serial.println("Flash");
+          dB_min++;
+          if (deciLight == 1) {
+            preferences.putUInt("dB_min", dB_min);
+            fill_solid(leds, NUM_LEDS, CRGB::Black);
+            FastLED.show();
+          }
+          break;
+        case 0xF730CF:
+          // Serial.println("OrangeRed");
+          deciLight = 0;
+          fill_solid(leds, NUM_LEDS, CRGB::OrangeRed);
+          FastLED.show();
+          break;
+        case 0xF7B04F:
+          // Serial.println("Cyan");
+          deciLight = 0;
+          fill_solid(leds, NUM_LEDS, CRGB::Cyan);
+          FastLED.show();
+          break;
+        case 0xF7708F:
+          // Serial.println("RebeccaPurple");
+          deciLight = 0;
+          fill_solid(leds, NUM_LEDS, CRGB::Purple);
+          FastLED.show();
+          break;
+        case 0xF7F00F:
+          // Serial.println("Strobe");
+          if (deciLight == 1) {
+            dB_min--;
+            preferences.putUInt("dB_min", dB_min);
+            fill_solid(leds, NUM_LEDS, CRGB::Black);
+            FastLED.show();
+          }
+          break;
+        case 0xF708F7:
+          // Serial.println("Orange");
+          deciLight = 0;
+          fill_solid(leds, NUM_LEDS, CRGB::Orange);
+          FastLED.show();
+          break;
+        case 0xF78877:
+          // Serial.println("Turquoise");
+          deciLight = 0;
+          fill_solid(leds, NUM_LEDS, CRGB::Turquoise);
+          FastLED.show();
+          break;
+        case 0xF748B7:
+          // Serial.println("Purple");
+          deciLight = 0;
+          fill_solid(leds, NUM_LEDS, CRGB::MediumPurple);
+          FastLED.show();
+          break;
+        case 0xF7C837:
+          // Serial.println("Fade");
+          if (deciLight == 1) {
+            dB_max++;
+            preferences.putUInt("dB_max", dB_max);
+            fill_solid(leds, NUM_LEDS, CRGB::Black);
+            FastLED.show();
+          }
+          break;
+        case 0xF728D7:
+          // Serial.println("Yellow");
+          deciLight = 0;
+          fill_solid(leds, NUM_LEDS, CRGB::Yellow);
+          FastLED.show();
+          break;
+        case 0xF7A857:
+          // Serial.println("DarkCyan");
+          deciLight = 0;
+          fill_solid(leds, NUM_LEDS, CRGB::DarkCyan);
+          FastLED.show();
+          break;
+        case 0xF76897:
+          // Serial.println("Plum");
+          deciLight = 0;
+          fill_solid(leds, NUM_LEDS, CRGB::Plum);
+          FastLED.show();
+          break;
+        case 0xF7E817:
+          // Serial.println("Smooth");
+          if (deciLight == 1) {
+            dB_max--;
+            preferences.putUInt("dB_max", dB_max);
+            fill_solid(leds, NUM_LEDS, CRGB::Black);
+            FastLED.show();
+          }
+          break;
+        default:
+          Serial.println("Unknown button pressed");
+          Serial.print(results.value, HEX);
+          Serial.println("");
       }
-      // Serial.println(IR_val);
-      Serial.printf("Current dB_min value: %u\n", dB_min);
-      Serial.printf("Current dB_max value: %u\n", dB_max);
       irrecv.resume(); // Receive the next value
     }
     delay(100);
@@ -369,25 +522,22 @@ void setup() {
       // Debug only
       // Serial.printf("%u processing ticks\n", q.proc_ticks);
 
-      if (Leq_dB < dB_min) {
-        fill_solid(leds, NUM_LEDS, CRGB::Green);
-        FastLED.delay(500);
-      }
-      else if (Leq_dB < dB_max) {
-        fill_solid(leds, NUM_LEDS, CRGB::Yellow);
-        FastLED.delay(500);
-      }
-      else {
-        fill_solid(leds, NUM_LEDS, CRGB::Red);
-        FastLED.delay(500);
+      if (deciLight == 1) {
+        if (Leq_dB < dB_min) {
+          fill_solid(leds, NUM_LEDS, CRGB::Green);
+          FastLED.show();
+        }
+        else if (Leq_dB < dB_max) {
+          fill_solid(leds, NUM_LEDS, CRGB::Yellow);
+          FastLED.show();
+        }
+        else {
+          fill_solid(leds, NUM_LEDS, CRGB::Red);
+          FastLED.show();
+        }
       }
 
     }
 
   }
-
-}
-
-void loop() {
-  // Nothing here..
 }
