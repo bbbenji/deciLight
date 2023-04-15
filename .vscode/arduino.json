@@ -1,8 +1,4 @@
 {
-    "configuration": "FlashFreq=80,UploadSpeed=921600,DebugLevel=none,EraseFlash=none",
     "board": "esp32:esp32:firebeetle32",
-    "port": "/dev/ttyUSB0",
-    "sketch": "esp32-db-signaller.ino",
-    "output": "../build",
-    "programmer": "esptool"
+    "port": "/dev/ttyUSB0"
 }
