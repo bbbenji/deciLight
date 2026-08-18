@@ -114,7 +114,7 @@ Set `FEATURE_WIFI` to 0 in `config.h` to build without any of this. That saves a
 
 #### Building
 
-Requires the ESP32 core and two libraries. Verified against ESP32 core 2.0.5, FastLED 3.10.5 and IRremoteESP8266 2.9.0.
+Requires the ESP32 core and two libraries. Verified against ESP32 core 2.0.5, FastLED 3.10.5 and IRremoteESP8266 2.9.0. Arch Linux users have a few distribution-specific hurdles - serial port groups and an easily missed dependency - covered in [docs/building-arch-linux.md](docs/building-arch-linux.md).
 
 ```sh
 arduino-cli config add board_manager.additional_urls \
