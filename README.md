@@ -140,6 +140,16 @@ The `nvs` partition keeps its stock offset and size, so thresholds saved by an e
 
 The sketch also opens directly in the Arduino IDE, and `.vscode/` carries a working configuration for the VS Code Arduino extension. Note that the `.ino` filename has to match the folder name, which is why it is `deciLight.ino`.
 
+#### Tests
+
+The hardware-independent modules - settings, the signal light's colour and dampening logic, and the remote key map - have host tests that need no board and no ESP32 toolchain:
+
+```sh
+make -C test check
+```
+
+They run in under a second and cover threshold clamping, hysteresis, smoothing, mode behaviour, deferred flash writes, and every one of the 24 remote keys individually. See [test/README.md](test/README.md) for what is deliberately *not* covered.
+
 #### Configuring
 
 Almost everything worth changing is a named constant in `config.h`:

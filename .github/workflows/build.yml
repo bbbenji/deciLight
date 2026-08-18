@@ -16,6 +16,16 @@ env:
   LIB_IRREMOTE: IRremoteESP8266@2.9.0
 
 jobs:
+  # Runs first in practice: no toolchain to download, so it fails fast on a
+  # logic regression while the firmware build is still installing the core.
+  test:
+    name: host tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run
+        run: make -C test check
+
   build:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest

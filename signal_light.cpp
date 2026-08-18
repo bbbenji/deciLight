@@ -81,6 +81,13 @@ void begin(uint8_t brightness) {
   FastLED.setMaxPowerInVoltsAndMilliamps(LED_PSU_VOLTS, LED_PSU_MILLIAMPS);
   if (LED_POWER_INDICATOR_PIN >= 0) set_max_power_indicator_LED(LED_POWER_INDICATOR_PIN);
 
+  // Establish power-on state explicitly rather than relying on static
+  // initialisation, so begin() is a real reset point.
+  currentMode = Mode::Auto;
+  currentZone = Zone::Unknown;
+  smoothedDb = NAN;
+  flashUntilMs = 0;
+
   fill_solid(leds, LED_COUNT, CRGB::Black);
   FastLED.show();
   dirty = true;

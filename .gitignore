@@ -1,3 +1,6 @@
 # arduino-cli --output-dir and the CI compile log
 build/
 compile.log
+
+# host test binaries
+test/build/

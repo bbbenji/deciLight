@@ -51,6 +51,7 @@ void begin() {
     Serial.println(F("settings: NVS unavailable, using defaults for this session"));
     current = {DB_MIN_DEFAULT, DB_MAX_DEFAULT, LED_BRIGHTNESS_DEFAULT};
     stored = current;
+    dirty = false;
     return;
   }
 
@@ -69,6 +70,7 @@ void begin() {
   prefs.getString(kKeyPass, wifiPassBuf, sizeof(wifiPassBuf));
 
   stored = current;
+  dirty = false;
 }
 
 const Settings& get() { return current; }
