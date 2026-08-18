@@ -43,6 +43,10 @@ Beyond its utility as a noise monitor, deciLight's color-changing feature can be
 - Print the lens in clear PETG with grid infill.
 - Print the feet in TPU and attach them with double sided tape.
 
+### Wiring:
+
+Pin assignments and hookup diagrams for every module are in [docs/wiring.md](docs/wiring.md); [pins.txt](pins.txt) is the same information in short form.
+
 ### Schematic:
 
 
