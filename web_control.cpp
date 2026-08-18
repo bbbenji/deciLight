@@ -7,6 +7,7 @@
 #include <WebServer.h>
 #include <WiFi.h>
 
+#include "ota.h"
 #include "settings.h"
 #include "signal_light.h"
 #include "web_page.h"
@@ -88,7 +89,12 @@ void sendState() {
   out += ",\"net\":\"";        out += accessPointMode ? "ap" : "sta";
   out += "\",\"ssid\":\"";     out += jsonEscape(ssid);
   out += "\",\"ip\":\"";       out += ip.toString();
-  out += "\"}";
+#if FEATURE_OTA
+  out += "\",\"ota\":";       out += ota::available() ? "true" : "false";
+  out += "}";
+#else
+  out += "\",\"ota\":false}";
+#endif
 
   server.send(200, "application/json", out);
 }
@@ -195,6 +201,9 @@ bool begin() {
   server.on("/api/set", HTTP_POST, handleSet);
   server.on("/api/mode", HTTP_POST, handleMode);
   server.on("/api/wifi", HTTP_POST, handleWifi);
+#if FEATURE_OTA
+  ota::registerRoutes(server);
+#endif
   // Anything else redirects to the page, so a captive-portal probe or a
   // mistyped path still lands somewhere useful.
   server.onNotFound(handleRoot);

@@ -143,6 +143,31 @@ constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 15000;
 constexpr uint16_t WEB_SERVER_PORT = 80;
 
 // -----------------------------------------------------------------------------
+// Over-the-air updates
+//
+// Lets a mounted unit be reflashed from a browser instead of coming off the
+// wall for a USB cable. Requires FEATURE_WIFI.
+//
+// SECURITY: an OTA endpoint accepts arbitrary code. Changing the light's
+// colour over the network is harmless; replacing its firmware is not, and the
+// access point password below is published in this repository. So OTA is
+// disabled until OTA_PASSWORD is set to something, and refuses every request
+// while it is empty. Set it before relying on this, and prefer a value you do
+// not use anywhere else - it travels as base64 over plain HTTP.
+// -----------------------------------------------------------------------------
+#ifndef FEATURE_OTA
+#define FEATURE_OTA 1
+#endif
+
+constexpr char OTA_USERNAME[] = "decilight";
+constexpr char OTA_PASSWORD[] = "";  // empty disables OTA entirely
+
+// Held on the ring while an update is being written, so a room can see why the
+// light stopped responding. The unit restarts on its own afterwards.
+constexpr uint32_t COLOR_UPDATING = 0x0000FF;
+constexpr uint32_t COLOR_FAILED   = 0xFF00FF;
+
+// -----------------------------------------------------------------------------
 // Sampling
 // -----------------------------------------------------------------------------
 constexpr uint32_t SAMPLE_RATE = 48000;  // fixed by the IIR filter design

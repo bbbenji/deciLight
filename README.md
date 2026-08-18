@@ -68,6 +68,8 @@ The sketch is split by responsibility, so that adding a feature usually means to
 | `remote_control.{h,cpp}` | IR key map and what each key does |
 | `web_control.{h,cpp}` | WiFi bring-up and the HTTP control interface |
 | `web_page.h` | The control page, served from flash |
+| `ota.{h,cpp}` | Over-the-air firmware updates |
+| `tools/dev-server.py` | Serves the control page against a simulated device, for working on the UI without hardware |
 | `sos-iir-filter.h` | Second-Order Sections filter kernel, with a hand-written Xtensa assembly inner loop. Upstream code from [esp32-i2s-slm](https://github.com/ikostoski/esp32-i2s-slm), unmodified |
 | `math/*.m` | GNU Octave scripts that generate the equaliser coefficients for each supported microphone |
 
@@ -106,10 +108,19 @@ Behind the page is a small HTTP API, if you would rather script it:
 | `POST /api/set` | `dbMin`, `dbMax`, `brightness` - any subset |
 | `POST /api/mode` | `mode=auto`, `mode=off`, or `mode=manual&color=RRGGBB` |
 | `POST /api/wifi` | `ssid`, `pass` - saved to flash, then the unit restarts |
+| `POST /api/update` | Multipart firmware upload. Requires HTTP basic auth, and is refused entirely unless `OTA_PASSWORD` is set |
 
 Every value is clamped by the same code that guards the remote, so no request can produce an unusable device.
 
-There is no authentication. Anything that can reach the unit can change its settings, which is the right trade for a classroom light on a local network, but do not expose it to the internet.
+There is no authentication on the settings endpoints. Anything that can reach the unit can change its thresholds or colour, which is the right trade for a classroom light on a local network, but do not expose it to the internet. Firmware upload is the exception and is treated separately below.
+
+#### Updating over the air
+
+Once a unit is on the network it can be reflashed from the same page, so a light mounted on a wall does not have to come down for a USB cable. Build as usual, then upload the resulting `.bin` from the "Update firmware" section. The ring turns blue while the image is written and the unit restarts on its own.
+
+**This is off by default and has to be turned on deliberately.** An update endpoint accepts arbitrary code, the access point password is published in this repository, and the two together would let anyone within WiFi range replace the firmware. So `OTA_PASSWORD` in `config.h` is empty out of the box and every upload is refused until you set it; the page hides the upload form entirely while that is the case. Pick a password you do not use elsewhere - it travels as base64 over plain HTTP, which is fine on a classroom LAN and not fine anywhere else.
+
+Set `FEATURE_OTA` to 0 to leave the code out of the build altogether. It costs about 6KB.
 
 Set `FEATURE_WIFI` to 0 in `config.h` to build without any of this. That saves about 500KB of flash and 23KB of RAM, and the result fits the stock partition layout.
 
@@ -155,6 +166,16 @@ make -C test check
 ```
 
 They run in under a second and cover threshold clamping, hysteresis, smoothing, mode behaviour, deferred flash writes, and every one of the 24 remote keys individually. See [test/README.md](test/README.md) for what is deliberately *not* covered.
+
+The web interface can be worked on without a board too. `tools/dev-server.py` serves the real page from `web_page.h` against a simulated unit, reading the thresholds, limits and colours out of `config.h` so the mock cannot drift from the firmware:
+
+```sh
+tools/dev-server.py             # then open http://127.0.0.1:8080/
+tools/dev-server.py --level 72  # hold a level instead of sweeping
+tools/dev-server.py --check     # assert its JSON still matches web_control.cpp
+```
+
+By default it sweeps the level across the whole range every 40 seconds, so every colour, the overload note and the noise-floor note all appear without any input. CI runs `--check` on every push.
 
 #### Configuring
 

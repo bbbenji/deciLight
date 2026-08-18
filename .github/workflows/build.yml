@@ -45,6 +45,11 @@ jobs:
       - name: Build and run
         run: make -C test check
 
+      # The dev server stands in for a real unit while the UI is worked on, so
+      # its JSON has to stay in step with what the firmware actually sends.
+      - name: Check the dev server matches the firmware's API
+        run: ./tools/dev-server.py --check
+
   build:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest

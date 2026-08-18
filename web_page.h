@@ -60,6 +60,10 @@ input[type=text],input[type=password]{width:100%;padding:10px;margin-top:8px;
 border-radius:10px;border:1px solid var(--line);background:#242835;
 color:var(--text);font:inherit;font-size:15px}
 .net{color:var(--dim);font-size:12px;text-align:center;margin:18px 0 4px}
+input[type=file]{width:100%;margin-top:8px;color:var(--dim);font-size:13px}
+.bar{height:6px;border-radius:3px;background:#242835;margin-top:12px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:#5b8cff;transition:width .2s}
+#otanote{color:var(--dim);font-size:13px;margin-top:8px;min-height:1.2em}
 </style>
 </head>
 <body>
@@ -95,6 +99,17 @@ color:var(--text);font:inherit;font-size:15px}
     <input type="text" id="ssid" placeholder="Network name" autocapitalize="off" autocorrect="off">
     <input type="password" id="pass" placeholder="Password">
     <div class="row" style="margin-top:12px"><button id="wsave">Save and restart</button></div>
+  </details>
+</div>
+
+<div class="card" id="otacard" hidden>
+  <details>
+    <summary>Update firmware</summary>
+    <input type="password" id="otapass" placeholder="Update password">
+    <input type="file" id="otafile" accept=".bin">
+    <div class="row" style="margin-top:12px"><button id="otago">Upload and restart</button></div>
+    <div class="bar" id="otabar" hidden><i id="otafill"></i></div>
+    <div id="otanote"></div>
   </details>
 </div>
 
@@ -167,10 +182,47 @@ function render(s){
   if(dragging!="smax") $("smax").value=s.dbMax;
   if(dragging!="sbri") $("sbri").value=s.brightness;
   paint();
+  $("otacard").hidden=!s.ota;
   $("net").textContent=s.net=="ap"
     ? "Access point "+s.ssid+" \u00b7 "+s.ip
     : "Connected to "+s.ssid+" \u00b7 "+s.ip;
 }
+
+$("otago").onclick=function(){
+  var f=$("otafile").files[0];
+  if(!f){ $("otanote").textContent="Choose a .bin file first."; return; }
+  var pass=$("otapass").value;
+  if(!pass){ $("otanote").textContent="Enter the update password."; return; }
+
+  var fd=new FormData(); fd.append("firmware",f,f.name);
+  var x=new XMLHttpRequest();
+  // Credentials go on open() rather than waiting for a 401 challenge, which
+  // browsers do not reliably surface for XHR.
+  x.open("POST","/api/update",true,"decilight",pass);
+  busy=1;
+  $("otabar").hidden=false;
+  x.upload.onprogress=function(e){
+    if(e.lengthComputable) $("otafill").style.width=(e.loaded/e.total*100)+"%";
+  };
+  x.onload=function(){
+    busy=0;
+    if(x.status==200){
+      $("otanote").textContent="Uploaded. The light is restarting.";
+    }else{
+      var msg="Update failed.";
+      try{ msg=JSON.parse(x.responseText).error||msg; }catch(_){}
+      $("otanote").textContent=msg;
+      $("otafill").style.width="0";
+    }
+  };
+  x.onerror=function(){
+    busy=0;
+    // The unit resets as soon as it has the image, so the connection dropping
+    // at the very end is the expected ending, not a failure.
+    $("otanote").textContent="Connection closed - if the upload completed, the light is restarting.";
+  };
+  x.send(fd);
+};
 
 function poll(){
   if(busy||dragging) return;
