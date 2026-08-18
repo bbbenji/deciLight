@@ -32,7 +32,7 @@ constexpr uint32_t SERIAL_BAUD = 115200;
 // Bump it when you flash something you want to be able to identify later -
 // with OTA in the picture, "which build is actually on that unit" stops being
 // a rhetorical question.
-#define FIRMWARE_VERSION_JSON "1.0.6"
+#define FIRMWARE_VERSION_JSON "2.0.0"
 constexpr char FIRMWARE_VERSION[] = FIRMWARE_VERSION_JSON;
 
 // The name on the splash screen. Lower-case "d" to match how the project
@@ -162,6 +162,29 @@ constexpr uint8_t DB_MIN_SPAN = 2;
 constexpr float DB_SMOOTHING = 0.35f;
 constexpr float DB_HYSTERESIS = 1.5f;
 
+// How a group's readings become one number. Units stacked together hear the
+// same sound, so averaging cancels per-microphone variation; units spread
+// around a room hear different things, and there the loudest corner is the
+// signal worth showing.
+constexpr uint8_t COMBINE_LOUDEST = 0;
+constexpr uint8_t COMBINE_AVERAGE = 1;
+constexpr uint8_t COMBINE_DEFAULT = COMBINE_LOUDEST;
+
+// Which zones a unit lights. A lone light covers all three and behaves as it
+// always has; a stacked one covers a single zone and stays dark otherwise,
+// which is what makes three units read as one traffic signal. A two-unit
+// stack works too, with one of them covering a pair.
+constexpr uint8_t ZONE_MASK_QUIET = 1 << 0;
+constexpr uint8_t ZONE_MASK_WARN  = 1 << 1;
+constexpr uint8_t ZONE_MASK_LOUD  = 1 << 2;
+constexpr uint8_t ZONE_MASK_ALL   = ZONE_MASK_QUIET | ZONE_MASK_WARN | ZONE_MASK_LOUD;
+
+// What a unit shows when the group is in a zone it does not cover. Zero is a
+// dark lamp, like a real traffic signal; a low value leaves it glowing faintly
+// so the stack still reads as a traffic light even when only one lamp is
+// active, and a dead unit is distinguishable from an unlit one.
+constexpr uint8_t ZONE_INACTIVE_LEVEL_DEFAULT = 0;
+
 // -----------------------------------------------------------------------------
 // Microphone
 //
@@ -203,6 +226,12 @@ constexpr double MIC_OFFSET_DB = 3.0103;
 // networks whose clients support it.
 constexpr char WIFI_HOSTNAME[] = "decilight";
 
+// Fixed so that units which all fall back to their own access point end up on
+// the same radio channel. ESP-NOW only reaches peers sharing a channel, and in
+// station mode the channel is dictated by whichever router was joined - so
+// this is what lets a group of un-networked units find each other at all.
+constexpr uint8_t WIFI_AP_CHANNEL = 1;
+
 // Fallback access point. The password must be at least 8 characters, or empty
 // for an open network.
 constexpr char WIFI_AP_SSID[] = "deciLight";
@@ -213,6 +242,46 @@ constexpr char WIFI_AP_PASSWORD[] = "decilight";
 constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 15000;
 
 constexpr uint16_t WEB_SERVER_PORT = 80;
+
+// -----------------------------------------------------------------------------
+// Groups (ESP-NOW)
+//
+// Units on the same radio channel that share a group name act as one light.
+// Each broadcasts its measured level a few times a second; each decides what
+// to show from the group's level rather than its own.
+//
+// There is no pairing step and no peer list to maintain: transport is
+// broadcast, and the group name is what separates one set of lights from
+// another. That also means group membership is a convention rather than a
+// secret - anything in radio range running this firmware with the same name
+// joins in.
+//
+// Empty group name means sync is off, which is the default. A light that
+// starts talking to the neighbours out of the box would be a surprise.
+// -----------------------------------------------------------------------------
+#ifndef FEATURE_ESPNOW
+#define FEATURE_ESPNOW 1
+#endif
+
+constexpr char GROUP_NAME_DEFAULT[] = "";
+
+// How often a unit tells the group what it is hearing. Four times a second
+// matches the measurement period, so nothing is ever more than one reading
+// out of date.
+constexpr uint32_t GROUP_BROADCAST_MS = 250;
+
+// A peer that has gone quiet for this long stops counting towards the group
+// level. Without it, a unit switched off mid-shout would hold the whole room
+// red indefinitely.
+constexpr uint32_t GROUP_PEER_TIMEOUT_MS = 3000;
+
+// Well under the radio's own limit of 20; a classroom needs a handful.
+constexpr uint8_t GROUP_MAX_PEERS = 8;
+
+// Bumped only when the wire format changes incompatibly. Messages carrying
+// anything else are ignored, so a half-updated group degrades to units
+// working alone rather than to nonsense.
+constexpr uint8_t GROUP_PROTOCOL_VERSION = 1;
 
 // -----------------------------------------------------------------------------
 // Over-the-air updates

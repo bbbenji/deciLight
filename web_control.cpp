@@ -8,6 +8,7 @@
 #include <WiFi.h>
 
 #include "display.h"
+#include "group_sync.h"
 #include "ota.h"
 #include "remote_control.h"
 #include "settings.h"
@@ -122,6 +123,14 @@ void sendState() {
   appendInt(out, "dbMax", s.dbMax);
   appendInt(out, "brightness", s.brightness);
   appendInt(out, "displayBrightness", s.displayBrightness);
+  appendStr(out, "group", settings::groupName());
+  appendBool(out, "groupLevel", s.groupLevel);
+  appendInt(out, "zones", s.zones);
+  appendInt(out, "combine", s.combine);
+  appendInt(out, "inactiveLevel", s.inactiveLevel);
+  appendInt(out, "peers", group_sync::peerCount());
+  appendInt(out, "channel", group_sync::channel());
+  appendBool(out, "groupActive", group_sync::active());
   appendStr(out, "net", accessPointMode ? "ap" : "sta");
   appendStr(out, "ssid", ssid.c_str());
   appendStr(out, "ip", ip.toString().c_str());
@@ -167,6 +176,42 @@ void handleSet() {
   if (server.hasArg("displayBrightness")) {
     settings::setDisplayBrightness(server.arg("displayBrightness").toInt());
     display::setBrightness(settings::get().displayBrightness);
+  }
+  sendState();
+}
+
+// Group membership and how this unit behaves within it. Changing the name
+// needs the radio re-initialised, which is simplest to do by restarting.
+void handleGroup() {
+  bool restart = false;
+
+  if (server.hasArg("group")) {
+    if (strcmp(server.arg("group").c_str(), settings::groupName()) != 0) {
+      settings::setGroupName(server.arg("group").c_str());
+      restart = true;
+    }
+  }
+  if (server.hasArg("groupLevel")) {
+    settings::setGroupLevel(server.arg("groupLevel").toInt() != 0);
+  }
+  if (server.hasArg("zones")) settings::setZones(server.arg("zones").toInt());
+  if (server.hasArg("combine")) settings::setCombine(server.arg("combine").toInt());
+  if (server.hasArg("inactiveLevel")) {
+    settings::setInactiveLevel(server.arg("inactiveLevel").toInt());
+  }
+
+  const Settings& s = settings::get();
+  signal_light::setZones(s.zones, s.inactiveLevel);
+
+  if (restart) {
+    // Flush the new name before the reset, or it would be lost with the
+    // deferred write still pending.
+    settings::flush();
+    server.send(200, "application/json", "{\"restarting\":true}");
+    server.client().flush();
+    delay(200);
+    ESP.restart();
+    return;
   }
   sendState();
 }
@@ -219,6 +264,10 @@ bool connectToStoredNetwork() {
   Serial.printf("wifi: joining %s\n", ssid);
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(WIFI_HOSTNAME);
+  // Power save parks the radio between beacons, which silently drops
+  // incoming ESP-NOW packets. This is a mains-powered device, so the trade is
+  // easy.
+  WiFi.setSleep(false);
   WiFi.begin(ssid, settings::wifiPassword());
 
   const uint32_t startedMs = millis();
@@ -240,7 +289,11 @@ bool startAccessPoint() {
   WiFi.setHostname(WIFI_HOSTNAME);
   // An empty password yields an open network, which softAP expects as nullptr.
   const char* password = WIFI_AP_PASSWORD[0] ? WIFI_AP_PASSWORD : nullptr;
-  if (!WiFi.softAP(WIFI_AP_SSID, password)) {
+  WiFi.setSleep(false);
+  // Pinned rather than left to the default so that several units falling back
+  // to their own access points still share a channel, which is what lets them
+  // hear each other over ESP-NOW.
+  if (!WiFi.softAP(WIFI_AP_SSID, password, WIFI_AP_CHANNEL)) {
     Serial.println(F("wifi: could not start the access point"));
     return false;
   }
@@ -274,6 +327,7 @@ bool begin() {
   server.on("/api/set", HTTP_POST, handleSet);
   server.on("/api/mode", HTTP_POST, handleMode);
   server.on("/api/test", HTTP_POST, handleTest);
+  server.on("/api/group", HTTP_POST, handleGroup);
   server.on("/api/wifi", HTTP_POST, handleWifi);
 #if FEATURE_OTA
   ota::registerRoutes(server);

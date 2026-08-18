@@ -35,6 +35,7 @@
  *   remote_control.*  IR key map and what each key does
  *   display.*         optional SSD1306 status screen
  *   web_control.*     WiFi bring-up and the HTTP control interface
+ *   group_sync.*      ESP-NOW level sharing between units
  *   web_page.h        the page served to the browser
  *   sos-iir-filter.h  filter kernel, upstream, do not include twice
  *
@@ -43,6 +44,7 @@
 
 #include "config.h"
 #include "display.h"
+#include "group_sync.h"
 #include "remote_control.h"
 #include "settings.h"
 #include "signal_light.h"
@@ -86,7 +88,12 @@ void setup() {
     display::setStatus(FEATURE_WIFI ? "no wifi" : "");
   }
 
+  // Needs the radio already up, so it follows web_control.
+  group_sync::begin();
+
   const Settings& s = settings::get();
+  signal_light::setZones(s.zones, s.inactiveLevel);
+
   Serial.printf("%s %s ready, thresholds %u - %u " DB_UNITS "\n", PRODUCT_NAME,
                 FIRMWARE_VERSION, s.dbMin, s.dbMax);
 }
@@ -94,6 +101,7 @@ void setup() {
 void loop() {
   remote_control::poll();
   web_control::tick();
+  group_sync::tick();
   signal_light::tick();
   display::tick();
   settings::tick();
@@ -116,9 +124,16 @@ void loop() {
   }
 
   web_control::publishLevel(reading);
+  group_sync::publishLevel(reading.leqDb);
 
   const Settings& s = settings::get();
-  signal_light::updateLevel(reading.leqDb, s.dbMin, s.dbMax);
+
+  // Raw levels go over the air and are combined raw; each unit then smooths
+  // the result for itself, so a peer's smoothing never compounds with ours.
+  const float level =
+      s.groupLevel ? group_sync::groupLevel(reading.leqDb, s.combine) : reading.leqDb;
+
+  signal_light::updateLevel(level, s.dbMin, s.dbMax);
   display::update(reading.leqDb, reading.quality, s, signal_light::mode(),
                   signal_light::zone());
 }

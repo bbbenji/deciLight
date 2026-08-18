@@ -51,6 +51,8 @@ background:#242835;color:var(--text);font:inherit;font-size:14px;cursor:pointer;
 -webkit-tap-highlight-color:transparent}
 button:active{transform:scale(.97)}
 button.on{background:#5b8cff;border-color:#5b8cff;color:#0d1017;font-weight:600}
+button.zone{opacity:.45}
+button.zone.on{opacity:1}
 .sw{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;margin-top:12px}
 .sw i{aspect-ratio:1;border-radius:8px;border:1px solid #0006;cursor:pointer}
 .sw i:active{transform:scale(.9)}
@@ -72,7 +74,8 @@ color:var(--text);font:inherit;font-size:15px}
 input[type=file]{width:100%;margin-top:8px;color:var(--dim);font-size:13px}
 .bar{height:6px;border-radius:3px;background:#242835;margin-top:12px;overflow:hidden}
 .bar i{display:block;height:100%;width:0;background:#5b8cff;transition:width .2s}
-#otanote,#testnote,#irnote,#scrnote{color:var(--dim);font-size:13px;margin-top:10px}
+#otanote,#testnote,#irnote,#scrnote,#gnote{color:var(--dim);font-size:13px;margin-top:10px}
+label input[type=checkbox]{margin-right:8px;accent-color:#5b8cff}
 #testnote.live{color:var(--text);font-weight:600}
 #irnote b{color:var(--text);font-variant-numeric:tabular-nums}
 </style>
@@ -107,6 +110,28 @@ input[type=file]{width:100%;margin-top:8px;color:var(--dim);font-size:13px}
 <div class="card">
   <details>
     <summary class="adv">Advanced</summary>
+
+    <details class="sub">
+      <summary>Group</summary>
+      <input type="text" id="gname" placeholder="Group name (blank = work alone)"
+             autocapitalize="off" autocorrect="off" maxlength="16">
+      <div class="row" style="margin-top:12px"><button id="gsave">Save and restart</button></div>
+      <label style="margin-top:16px"><input type="checkbox" id="glevel"> Follow the group's level</label>
+      <label>This unit lights for</label>
+      <div class="row">
+        <button id="zq" class="zone">Quiet</button>
+        <button id="zw" class="zone">Warn</button>
+        <button id="zl" class="zone">Loud</button>
+      </div>
+      <label>Combine <b><span id="vcomb"></span></b></label>
+      <div class="row">
+        <button id="cmax">Loudest</button>
+        <button id="cavg">Average</button>
+      </div>
+      <label>Inactive lamp <b><span id="vinact"></span></b></label>
+      <input type="range" id="sinact" min="0" max="255">
+      <div id="gnote"></div>
+    </details>
 
     <details class="sub">
       <summary>Screen</summary>
@@ -227,12 +252,50 @@ function render(s){
     t.className="";
   }
   $("irnote").innerHTML=irLine(s);
+  renderGroup(s);
   $("net").textContent=s.name+" "+s.version+" \u00b7 "+(s.net=="ap"
     ? "Access point "+s.ssid
     : "Connected to "+s.ssid)+" \u00b7 "+s.ip;
 }
 
 $("testgo").onclick=function(){ post("/api/test",""); };
+
+var ZQ=1, ZW=2, ZL=4, zoneBits=7;
+function postGroup(extra){ post("/api/group",extra); }
+$("gsave").onclick=function(){
+  postGroup("group="+encodeURIComponent($("gname").value));
+  $("gnote").textContent="Saving and restarting...";
+};
+$("glevel").onchange=function(){ postGroup("groupLevel="+(this.checked?1:0)); };
+[["zq",ZQ],["zw",ZW],["zl",ZL]].forEach(function(z){
+  $(z[0]).onclick=function(){ postGroup("zones="+(zoneBits^z[1])); };
+});
+$("cmax").onclick=function(){ postGroup("combine=0"); };
+$("cavg").onclick=function(){ postGroup("combine=1"); };
+$("sinact").addEventListener("input",function(){ dragging="sinact"; });
+$("sinact").addEventListener("change",function(){
+  dragging=null;
+  postGroup("inactiveLevel="+this.value);
+});
+
+function renderGroup(s){
+  if(document.activeElement!=$("gname")) $("gname").value=s.group||"";
+  $("glevel").checked=!!s.groupLevel;
+  zoneBits=s.zones;
+  $("zq").className=(s.zones&ZQ)?"zone on":"zone";
+  $("zw").className=(s.zones&ZW)?"zone on":"zone";
+  $("zl").className=(s.zones&ZL)?"zone on":"zone";
+  $("cmax").className=s.combine==0?"on":"";
+  $("cavg").className=s.combine==1?"on":"";
+  $("vcomb").textContent=s.combine==1?"average":"loudest";
+  if(dragging!="sinact") $("sinact").value=s.inactiveLevel;
+  $("vinact").textContent=s.inactiveLevel==0?"dark":Math.round(s.inactiveLevel/255*100)+"%";
+  $("gnote").innerHTML = !s.group ? "Working alone. Give two units the same name to link them."
+    : !s.groupActive ? "Group <b>"+s.group+"</b> is configured but the radio did not start."
+    : "Group <b>"+s.group+"</b> on channel "+s.channel+", <b>"+s.peers+
+      "</b> peer"+(s.peers==1?"":"s")+" heard."+
+      (s.peers==0?" Peers must be on the same channel.":"");
+}
 
 function irLine(s){
   if(!s.irCode) return "No remote signal received yet.";

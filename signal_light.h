@@ -41,6 +41,13 @@ void setManualColor(uint32_t rgb);
 
 void setBrightness(uint8_t brightness);
 
+// Which zones this unit lights, as ZONE_MASK_* bits, and what it shows when
+// the level lands in a zone it does not cover. A unit covering all three
+// behaves as a lone light always has; a stacked one covers a single zone and
+// falls back to inactiveLevel otherwise, which is what makes three units read
+// as one traffic signal. An inactiveLevel of zero is a dark lamp.
+void setZones(uint8_t mask, uint8_t inactiveLevel);
+
 // Feeds a new measurement into the smoothing filter and, in Auto mode,
 // updates the signal colour. Ignored in Manual and Off.
 void updateLevel(float leqDb, uint8_t dbMin, uint8_t dbMax);

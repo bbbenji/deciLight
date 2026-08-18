@@ -240,6 +240,65 @@ void test_signal_light() {
   CHECK(fakes::lastColor() == COLOR_LOUD, "did not resume following the level: %s",
         colorName(fakes::lastColor()));
 
+  // Three units stacked, each covering one zone, are meant to read as a
+  // single traffic signal: exactly one lit, the others dark.
+  CASE("a stacked unit lights only for the zone it covers");
+  struct Lamp { uint8_t mask; uint32_t colour; const char* name; };
+  const Lamp stack[] = {{ZONE_MASK_QUIET, COLOR_QUIET, "green"},
+                        {ZONE_MASK_WARN,  COLOR_WARN,  "yellow"},
+                        {ZONE_MASK_LOUD,  COLOR_LOUD,  "red"}};
+  const float levels[] = {30.0f, 50.0f, 90.0f};  // quiet, warn, loud
+
+  for (int lamp = 0; lamp < 3; lamp++) {
+    for (int band = 0; band < 3; band++) {
+      start();
+      signal_light::setZones(stack[lamp].mask, 0);
+      settleAt(levels[band], kMin, kMax);
+      const uint32_t want = (lamp == band) ? stack[lamp].colour : 0u;
+      CHECK(fakes::lastColor() == want, "%s lamp at band %d showed 0x%06X, want 0x%06X",
+            stack[lamp].name, band, fakes::lastColor(), want);
+    }
+  }
+
+  CASE("an inactive lamp can be left dimly lit instead of dark");
+  start();
+  signal_light::setZones(ZONE_MASK_LOUD, 64);
+  settleAt(30.0f, kMin, kMax);   // group is quiet, this is the red lamp
+  const uint32_t dim = fakes::lastColor();
+  CHECK(dim != 0, "inactive lamp went dark despite an inactive level");
+  CHECK(dim != COLOR_LOUD, "inactive lamp is at full brightness");
+  CHECK((dim >> 16) > 0 && ((dim >> 8) & 0xFF) == 0, "dimmed the wrong colour: 0x%06X", dim);
+
+  // A unit covering two zones is how a stack of two avoids a dead band.
+  CASE("a unit covering two zones lights for both");
+  start();
+  signal_light::setZones(ZONE_MASK_QUIET | ZONE_MASK_WARN, 0);
+  settleAt(30.0f, kMin, kMax);
+  CHECK(fakes::lastColor() == COLOR_QUIET, "quiet band showed %s",
+        colorName(fakes::lastColor()));
+  settleAt(50.0f, kMin, kMax);
+  CHECK(fakes::lastColor() == COLOR_WARN, "warn band showed %s",
+        colorName(fakes::lastColor()));
+  settleAt(90.0f, kMin, kMax);
+  CHECK(fakes::lastColor() == 0, "loud band should be another unit's job");
+
+  CASE("covering all three zones behaves exactly as a lone light");
+  start();
+  signal_light::setZones(ZONE_MASK_ALL, 0);
+  settleAt(30.0f, kMin, kMax);
+  CHECK(fakes::lastColor() == COLOR_QUIET, "quiet: %s", colorName(fakes::lastColor()));
+  settleAt(50.0f, kMin, kMax);
+  CHECK(fakes::lastColor() == COLOR_WARN, "warn: %s", colorName(fakes::lastColor()));
+  settleAt(90.0f, kMin, kMax);
+  CHECK(fakes::lastColor() == COLOR_LOUD, "loud: %s", colorName(fakes::lastColor()));
+
+  CASE("an empty mask is refused rather than leaving a unit permanently dark");
+  start();
+  signal_light::setZones(0, 0);
+  settleAt(50.0f, kMin, kMax);
+  CHECK(fakes::lastColor() == COLOR_WARN, "an empty mask blanked the unit: %s",
+        colorName(fakes::lastColor()));
+
   CASE("a minimum-width threshold window still resolves to a colour");
   start();
   const uint8_t narrowMin = 50, narrowMax = 50 + DB_MIN_SPAN;

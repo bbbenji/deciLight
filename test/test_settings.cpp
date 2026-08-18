@@ -122,6 +122,38 @@ void test_settings() {
   CHECK(fakes::storedUInt("screen_bri", 999) == s.displayBrightness,
         "not written to NVS");
 
+  CASE("group settings clamp and persist");
+  fakes::reset();
+  settings::begin();
+  CHECK(s.zones == ZONE_MASK_ALL, "default zones %u, want %u", s.zones, ZONE_MASK_ALL);
+  CHECK(!s.groupLevel, "group level defaulted on");
+  settings::setZones(0);
+  CHECK(s.zones == ZONE_MASK_ALL, "an empty mask was accepted");
+  settings::setZones(ZONE_MASK_LOUD);
+  settings::setCombine(99);
+  CHECK(s.combine == COMBINE_AVERAGE, "combine %u, want clamped to %u", s.combine,
+        COMBINE_AVERAGE);
+  settings::setGroupLevel(true);
+  settings::setInactiveLevel(1000);
+  CHECK(s.inactiveLevel == LED_BRIGHTNESS_MAX, "inactive level %u", s.inactiveLevel);
+  fakes::advanceMillis(5000);
+  settings::tick();
+  CHECK(fakes::storedUInt("zones", 0) == ZONE_MASK_LOUD, "zones not written");
+  CHECK(fakes::storedUInt("grp_level", 0) == 1, "group level not written");
+
+  // The group name change path restarts the unit, so the write cannot wait
+  // for the settle or it would be lost.
+  CASE("flush writes immediately for the paths that restart");
+  fakes::reset();
+  settings::begin();
+  settings::setDbMin(55);
+  const int writesBeforeFlush = fakes::nvsWrites();
+  settings::flush();
+  CHECK(fakes::nvsWrites() > writesBeforeFlush, "flush did not write");
+  CHECK(fakes::storedUInt("dB_min", 0) == 55, "flush wrote the wrong value");
+  settings::flush();
+  CHECK(fakes::storedUInt("dB_min", 0) == 55, "a second flush changed something");
+
   CASE("wifi credentials round-trip and are written immediately");
   fakes::reset();
   settings::begin();

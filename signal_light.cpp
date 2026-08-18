@@ -15,6 +15,9 @@ Zone currentZone = Zone::Unknown;
 
 uint32_t manualColor_ = COLOR_QUIET;
 
+uint8_t zoneMask = ZONE_MASK_ALL;
+uint8_t inactiveLevel = 0;
+
 // Running average of the measured level. NAN until the first measurement, so
 // the filter starts from a real reading rather than easing up from zero.
 float smoothedDb = NAN;
@@ -45,6 +48,33 @@ constexpr uint8_t kSelfTestSteps = sizeof(kSelfTest) / sizeof(kSelfTest[0]);
 bool testActive = false;
 uint8_t testStep = 0;
 uint32_t testStepUntilMs = 0;
+
+uint8_t maskBit(Zone zone) {
+  switch (zone) {
+    case Zone::Quiet: return ZONE_MASK_QUIET;
+    case Zone::Warn:  return ZONE_MASK_WARN;
+    case Zone::Loud:  return ZONE_MASK_LOUD;
+    default:          return 0;
+  }
+}
+
+// Scaled by hand rather than with FastLED's nscale8 so the arithmetic is the
+// same on the host, where the tests check it.
+CRGB dimmed(uint32_t rgb, uint8_t level) {
+  const uint32_t r = ((rgb >> 16) & 0xFF) * level / 255;
+  const uint32_t g = ((rgb >> 8) & 0xFF) * level / 255;
+  const uint32_t b = (rgb & 0xFF) * level / 255;
+  return CRGB((r << 16) | (g << 8) | b);
+}
+
+// The colour a unit stands for: the most severe zone it covers. A unit
+// holding quiet and warn is a yellow lamp that also shows green, so yellow is
+// what it dims to.
+uint32_t lampColor() {
+  if (zoneMask & ZONE_MASK_LOUD) return COLOR_LOUD;
+  if (zoneMask & ZONE_MASK_WARN) return COLOR_WARN;
+  return COLOR_QUIET;
+}
 
 CRGB zoneColor(Zone zone) {
   switch (zone) {
@@ -90,7 +120,15 @@ CRGB targetColor() {
   switch (currentMode) {
     case Mode::Off:    return CRGB::Black;
     case Mode::Manual: return CRGB(manualColor_);
-    default:           return zoneColor(currentZone);
+    default: {
+      const uint8_t bit = maskBit(currentZone);
+      // A zone this unit does not cover means another unit in the stack is
+      // showing it, so this one steps back.
+      if (bit != 0 && (zoneMask & bit) == 0) {
+        return inactiveLevel == 0 ? CRGB(CRGB::Black) : dimmed(lampColor(), inactiveLevel);
+      }
+      return zoneColor(currentZone);
+    }
   }
 }
 
@@ -112,6 +150,8 @@ void begin(uint8_t brightness) {
   flashUntilMs = 0;
   testActive = false;
   testStep = 0;
+  zoneMask = ZONE_MASK_ALL;
+  inactiveLevel = 0;
 
   fill_solid(leds, LED_COUNT, CRGB::Black);
   FastLED.show();
@@ -138,6 +178,16 @@ void setMode(Mode next) {
 void setManualColor(uint32_t rgb) {
   manualColor_ = rgb;
   currentMode = Mode::Manual;
+  dirty = true;
+}
+
+void setZones(uint8_t mask, uint8_t inactive) {
+  // An empty mask would leave the unit permanently dark, which reads as a
+  // fault rather than a setting.
+  const uint8_t next = (mask & ZONE_MASK_ALL) == 0 ? ZONE_MASK_ALL : uint8_t(mask & ZONE_MASK_ALL);
+  if (next == zoneMask && inactive == inactiveLevel) return;
+  zoneMask = next;
+  inactiveLevel = inactive;
   dirty = true;
 }
 

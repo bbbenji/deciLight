@@ -40,10 +40,22 @@ def load_config() -> dict:
     """Read the constants the page depends on out of config.h."""
     src = (ROOT / "config.h").read_text()
     cfg = {}
-    for name, value in re.findall(
-        r"constexpr\s+\w+\s+(\w+)\s*=\s*(0x[0-9A-Fa-f]+|-?[\d.]+)f?\s*;", src
-    ):
-        cfg[name] = int(value, 16) if value.startswith("0x") else float(value)
+    # Values are taken in declaration order and may refer to earlier ones, so
+    # that expressions like "1 << 2" or "A | B | C" resolve rather than being
+    # skipped - which is how ZONE_MASK_ALL used to go missing.
+    SAFE = re.compile(r"^[0-9A-Za-z_ ()|&^<>+\-*/.]+$")
+    for name, expr in re.findall(r"constexpr\s+\w+\s+(\w+)\s*=\s*([^;]+);", src):
+        expr = expr.strip().rstrip("f")
+        if expr.startswith('"'):
+            continue                       # strings are picked up below
+        if not SAFE.match(expr):
+            continue
+        try:
+            value = eval(expr, {"__builtins__": {}}, dict(cfg))  # noqa: S307
+        except Exception:
+            continue
+        if isinstance(value, (int, float)):
+            cfg[name] = value
     for name, value in re.findall(r'constexpr\s+char\s+(\w+)\[\]\s*=\s*"([^"]*)"\s*;', src):
         cfg[name] = value
     # Some string constants are defined via the preprocessor so they can be
@@ -71,6 +83,14 @@ class Device:
         self.db_max = int(CFG["DB_MAX_DEFAULT"])
         self.brightness = int(CFG["LED_BRIGHTNESS_DEFAULT"])
         self.display_brightness = int(CFG["DISPLAY_BRIGHTNESS_DEFAULT"])
+        self.group = ""
+        self.group_level = False
+        self.zones = int(CFG["ZONE_MASK_ALL"])
+        self.combine = int(CFG["COMBINE_DEFAULT"])
+        self.inactive_level = int(CFG["ZONE_INACTIVE_LEVEL_DEFAULT"])
+        # Simulated peers, so the group readout can be built without a second
+        # board. Count is settable through the non-firmware /api/peers hook.
+        self.peers = 0
         self.mode = "auto"
         self.color = "%06X" % int(CFG["COLOR_QUIET"])
         self.zone = "unknown"
@@ -152,6 +172,14 @@ class Device:
             "dbMax": self.db_max,
             "brightness": self.brightness,
             "displayBrightness": self.display_brightness,
+            "group": self.group,
+            "groupLevel": self.group_level,
+            "zones": self.zones,
+            "combine": self.combine,
+            "inactiveLevel": self.inactive_level,
+            "peers": self.peers if self.group else 0,
+            "channel": 1 if self.group else 0,
+            "groupActive": bool(self.group),
             "net": "ap",
             "ssid": "deciLight (dev server)",
             "ip": "127.0.0.1",
@@ -233,6 +261,26 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, json.dumps(self.device.state()))
             else:
                 self._send(400, "unknown mode", "text/plain")
+        elif path == "/api/group":
+            if "group" in args:
+                self.device.group = args["group"][0][:16]
+            if "groupLevel" in args:
+                self.device.group_level = args["groupLevel"][0] != "0"
+            if "zones" in args:
+                z = int(args["zones"][0]) & int(CFG["ZONE_MASK_ALL"])
+                if z:                       # an empty mask is refused, as in the firmware
+                    self.device.zones = z
+            if "combine" in args:
+                self.device.combine = int(clamp(int(args["combine"][0]),
+                                                CFG["COMBINE_LOUDEST"], CFG["COMBINE_AVERAGE"]))
+            if "inactiveLevel" in args:
+                self.device.inactive_level = int(
+                    clamp(int(args["inactiveLevel"][0]), 0, CFG["LED_BRIGHTNESS_MAX"]))
+            self._send(200, json.dumps(self.device.state()))
+        elif path == "/api/peers":
+            # Not a firmware endpoint. Pretends peers are on the air.
+            self.device.peers = int(args.get("count", ["0"])[0])
+            self._send(200, json.dumps(self.device.state()))
         elif path == "/api/test":
             self.device.test_started = time.time()
             self._send(200, json.dumps(self.device.state()))

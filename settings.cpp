@@ -15,6 +15,11 @@ constexpr char kKeyDbMin[]   = "dB_min";
 constexpr char kKeyDbMax[]   = "dB_max";
 constexpr char kKeyBright[]  = "bright";
 constexpr char kKeyScreen[]  = "screen_bri";
+constexpr char kKeyGroup[]   = "group";
+constexpr char kKeyGrpLevel[] = "grp_level";
+constexpr char kKeyZones[]   = "zones";
+constexpr char kKeyCombine[] = "combine";
+constexpr char kKeyInactive[] = "inactive";
 constexpr char kKeySsid[]    = "wifi_ssid";
 constexpr char kKeyPass[]    = "wifi_pass";
 
@@ -26,6 +31,11 @@ Preferences prefs;
 // Sized to the 802.11 maxima: 32-character SSID, 63-character WPA2 passphrase.
 char wifiSsidBuf[33] = {0};
 char wifiPassBuf[64] = {0};
+
+// Kept out of Settings so the flush can compare it with a strcmp rather than
+// the field-by-field equality the numeric settings use.
+char groupNameBuf[17] = {0};
+char groupNameStored[17] = {0};
 
 Settings current;
 Settings stored;
@@ -43,6 +53,29 @@ void markDirty() {
   dirtySinceMs = millis();
 }
 
+// Only fields that actually differ are written, so a burst of edits that ends
+// where it started costs nothing.
+void writeNow() {
+  if (current.dbMin != stored.dbMin) prefs.putUInt(kKeyDbMin, current.dbMin);
+  if (current.dbMax != stored.dbMax) prefs.putUInt(kKeyDbMax, current.dbMax);
+  if (current.brightness != stored.brightness) prefs.putUInt(kKeyBright, current.brightness);
+  if (current.displayBrightness != stored.displayBrightness)
+    prefs.putUInt(kKeyScreen, current.displayBrightness);
+  if (current.groupLevel != stored.groupLevel)
+    prefs.putUInt(kKeyGrpLevel, current.groupLevel ? 1 : 0);
+  if (current.zones != stored.zones) prefs.putUInt(kKeyZones, current.zones);
+  if (current.combine != stored.combine) prefs.putUInt(kKeyCombine, current.combine);
+  if (current.inactiveLevel != stored.inactiveLevel)
+    prefs.putUInt(kKeyInactive, current.inactiveLevel);
+  if (strcmp(groupNameBuf, groupNameStored) != 0) {
+    prefs.putString(kKeyGroup, groupNameBuf);
+    strncpy(groupNameStored, groupNameBuf, sizeof(groupNameStored) - 1);
+  }
+
+  stored = current;
+  dirty = false;
+}
+
 }  // namespace
 
 void begin() {
@@ -55,13 +88,17 @@ void begin() {
   dirtySinceMs = 0;
   wifiSsidBuf[0] = '\0';
   wifiPassBuf[0] = '\0';
+  groupNameBuf[0] = '\0';
+  groupNameStored[0] = '\0';
 
   // Opened once and left open; closing and reopening per access costs several
   // milliseconds and gains nothing.
   if (!prefs.begin(kNamespace, /*readOnly=*/false)) {
     Serial.println(F("settings: NVS unavailable, using defaults for this session"));
-    current = {DB_MIN_DEFAULT, DB_MAX_DEFAULT, LED_BRIGHTNESS_DEFAULT,
-               DISPLAY_BRIGHTNESS_DEFAULT};
+    current = {DB_MIN_DEFAULT,   DB_MAX_DEFAULT,
+               LED_BRIGHTNESS_DEFAULT, DISPLAY_BRIGHTNESS_DEFAULT,
+               false,               ZONE_MASK_ALL,
+               COMBINE_DEFAULT,     ZONE_INACTIVE_LEVEL_DEFAULT};
     stored = current;
     dirty = false;
     return;
@@ -81,8 +118,21 @@ void begin() {
     current.dbMin = clampInt(current.dbMax - DB_MIN_SPAN, DB_LIMIT_LOW, DB_LIMIT_HIGH);
   }
 
+  current.groupLevel = prefs.getUInt(kKeyGrpLevel, 0) != 0;
+  current.zones = clampInt(prefs.getUInt(kKeyZones, ZONE_MASK_ALL), 0, ZONE_MASK_ALL);
+  current.combine = clampInt(prefs.getUInt(kKeyCombine, COMBINE_DEFAULT),
+                             COMBINE_LOUDEST, COMBINE_AVERAGE);
+  current.inactiveLevel = clampInt(prefs.getUInt(kKeyInactive, ZONE_INACTIVE_LEVEL_DEFAULT),
+                                   0, LED_BRIGHTNESS_MAX);
+
+  // A unit whose mask ended up empty would never light at all, which reads as
+  // a dead unit rather than a configuration mistake.
+  if (current.zones == 0) current.zones = ZONE_MASK_ALL;
+
   prefs.getString(kKeySsid, wifiSsidBuf, sizeof(wifiSsidBuf));
   prefs.getString(kKeyPass, wifiPassBuf, sizeof(wifiPassBuf));
+  prefs.getString(kKeyGroup, groupNameBuf, sizeof(groupNameBuf));
+  strncpy(groupNameStored, groupNameBuf, sizeof(groupNameStored) - 1);
 
   stored = current;
   dirty = false;
@@ -118,6 +168,42 @@ void setDisplayBrightness(int value) {
   markDirty();
 }
 
+void setGroupLevel(bool enabled) {
+  if (enabled == current.groupLevel) return;
+  current.groupLevel = enabled;
+  markDirty();
+}
+
+void setZones(int mask) {
+  const uint8_t next = clampInt(mask, 0, ZONE_MASK_ALL);
+  // Refuse to leave a unit with nothing to light; that looks like a fault.
+  if (next == 0 || next == current.zones) return;
+  current.zones = next;
+  markDirty();
+}
+
+void setCombine(int mode) {
+  const uint8_t next = clampInt(mode, COMBINE_LOUDEST, COMBINE_AVERAGE);
+  if (next == current.combine) return;
+  current.combine = next;
+  markDirty();
+}
+
+void setInactiveLevel(int value) {
+  const uint8_t next = clampInt(value, 0, LED_BRIGHTNESS_MAX);
+  if (next == current.inactiveLevel) return;
+  current.inactiveLevel = next;
+  markDirty();
+}
+
+const char* groupName() { return groupNameBuf; }
+
+void setGroupName(const char* name) {
+  strncpy(groupNameBuf, name ? name : "", sizeof(groupNameBuf) - 1);
+  groupNameBuf[sizeof(groupNameBuf) - 1] = '\0';
+  markDirty();
+}
+
 void adjustDbMin(int delta) { setDbMin(current.dbMin + delta); }
 void adjustDbMax(int delta) { setDbMax(current.dbMax + delta); }
 void adjustBrightness(int delta) { setBrightness(current.brightness + delta); }
@@ -134,19 +220,15 @@ void setWifiCredentials(const char* ssid, const char* password) {
   prefs.putString(kKeyPass, wifiPassBuf);
 }
 
+void flush() {
+  if (dirty) writeNow();
+}
+
 void tick() {
   if (!dirty) return;
   // Unsigned arithmetic, so this stays correct across the millis() rollover.
   if (millis() - dirtySinceMs < kFlushDelayMs) return;
-
-  if (current.dbMin != stored.dbMin) prefs.putUInt(kKeyDbMin, current.dbMin);
-  if (current.dbMax != stored.dbMax) prefs.putUInt(kKeyDbMax, current.dbMax);
-  if (current.brightness != stored.brightness) prefs.putUInt(kKeyBright, current.brightness);
-  if (current.displayBrightness != stored.displayBrightness)
-    prefs.putUInt(kKeyScreen, current.displayBrightness);
-
-  stored = current;
-  dirty = false;
+  writeNow();
 }
 
 }  // namespace settings
