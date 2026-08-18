@@ -1,0 +1,141 @@
+name: Build firmware
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Pinned rather than floating. A firmware repo wants reproducible builds more
+# than it wants early warning of upstream churn, and FastLED in particular
+# moves fast enough to break a build for reasons unrelated to this project.
+env:
+  FQBN: esp32:esp32:firebeetle32
+  BOARD_URL: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+  ESP32_CORE: esp32:esp32@2.0.5
+  LIB_FASTLED: FastLED@3.10.5
+  LIB_IRREMOTE: IRremoteESP8266@2.9.0
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The shipping configuration. Needs the partition override, because
+          # the FireBeetle board definition advertises the stock 1.31MB app
+          # slot while partitions.csv actually provides 1.9MB.
+          - name: default (WiFi)
+            id: wifi
+            extra_flags: ""
+            max_size: "1966080"
+            artifacts: true
+
+          # Guards the compile-time switch, which is easy to break by adding an
+          # unguarded include or call. No size override here on purpose: this
+          # build is supposed to fit the stock layout, so letting it check
+          # against the board's own 1.31MB limit is the assertion.
+          - name: FEATURE_WIFI=0
+            id: nowifi
+            extra_flags: "-DFEATURE_WIFI=0"
+            max_size: ""
+            artifacts: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Arduino core and libraries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.arduino15
+            ~/Arduino/libraries
+          # The ESP32 core is a few hundred megabytes, so a miss costs several
+          # minutes. Keyed on the pinned versions above.
+          key: arduino-${{ runner.os }}-${{ env.ESP32_CORE }}-${{ env.LIB_FASTLED }}-${{ env.LIB_IRREMOTE }}
+
+      - name: Install arduino-cli
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install core and libraries
+        run: |
+          arduino-cli core update-index --additional-urls "$BOARD_URL"
+          arduino-cli core install --additional-urls "$BOARD_URL" "$ESP32_CORE"
+          arduino-cli lib install "$LIB_FASTLED" "$LIB_IRREMOTE"
+
+      - name: Compile
+        run: |
+          args=(compile --clean --fqbn "$FQBN" --output-dir build --warnings default)
+
+          if [ -n "${{ matrix.extra_flags }}" ]; then
+            args+=(--build-property "compiler.cpp.extra_flags=${{ matrix.extra_flags }}")
+          fi
+          if [ -n "${{ matrix.max_size }}" ]; then
+            args+=(--build-property "upload.maximum_size=${{ matrix.max_size }}")
+          fi
+
+          arduino-cli "${args[@]}" . 2>&1 | tee compile.log
+          # tee swallows the exit status, so check the pipe explicitly.
+          exit "${PIPESTATUS[0]}"
+
+      # partitions.csv silently reverting to the board default would produce a
+      # firmware that builds and then fails to boot, so assert the layout.
+      - name: Verify partition table
+        if: matrix.id == 'wifi'
+        run: |
+          python3 - <<'PY'
+          import struct, sys, glob
+
+          path = glob.glob("build/*.partitions.bin")
+          if not path:
+              sys.exit("no partition binary was produced")
+
+          entries = {}
+          data = open(path[0], "rb").read()
+          for i in range(0, len(data), 32):
+              e = data[i:i + 32]
+              if e[:2] != b"\xaa\x50":
+                  break
+              off, size = struct.unpack("<II", e[4:12])
+              entries[e[12:28].rstrip(b"\x00").decode()] = (off, size)
+
+          for name, (off, size) in entries.items():
+              print(f"  {name:10} off=0x{off:06X} size={size:>9} ({size // 1024}K)")
+
+          failures = []
+
+          app0 = entries.get("app0")
+          if not app0 or app0[1] < 1_900_000:
+              failures.append(f"app0 is {app0} - partitions.csv was not applied")
+
+          # Thresholds saved by earlier firmware live here. Moving or resizing
+          # it silently wipes every deployed unit's settings on update.
+          if entries.get("nvs") != (0x9000, 0x5000):
+              failures.append(f"nvs moved to {entries.get('nvs')}, expected (0x9000, 0x5000)")
+
+          if failures:
+              sys.exit("\n".join(failures))
+          print("partition layout OK")
+          PY
+
+      - name: Report size
+        run: |
+          {
+            echo "### ${{ matrix.name }}"
+            echo
+            echo '```'
+            grep -E "Sketch uses|Global variables" compile.log || echo "no size line found"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Only the .bin files. The .elf and .map from this build are 54MB and
+      # 35MB respectively and are not worth carrying.
+      - name: Upload firmware
+        if: matrix.artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: decilight-firmware-${{ github.sha }}
+          path: build/*.bin
+          if-no-files-found: error

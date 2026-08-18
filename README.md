@@ -1,5 +1,7 @@
 # deciLight - Visual Noise Monitor & Educational Tool
 
+[![Build firmware](https://github.com/bbbenji/deciLight/actions/workflows/build.yml/badge.svg)](https://github.com/bbbenji/deciLight/actions/workflows/build.yml)
+
 deciLight is a WIP traffic signal-inspired lighting system, designed to dynamically respond to ambient sound levels. This modular, stackable light features a unique capability to change colors—from red to yellow to green—based on the decibel levels in its surrounding environment. Users can set and adjust sensitivity thresholds remotely using an infrared (IR) remote control, which also allows for manual color and brightness changes, offering versatility and convenience.
 
 ### Classroom Noise Management

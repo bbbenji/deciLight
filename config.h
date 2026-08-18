@@ -121,7 +121,11 @@ constexpr double MIC_OFFSET_DB = 3.0103;
 // between rooms can therefore be controlled with no network at all: join the
 // deciLight access point from a phone and open http://192.168.4.1/.
 // -----------------------------------------------------------------------------
+// Guarded so a build system can override it with -DFEATURE_WIFI=0 without
+// editing this file. CI builds both variants that way.
+#ifndef FEATURE_WIFI
 #define FEATURE_WIFI 1
+#endif
 
 // Also the mDNS name, so the unit answers to http://decilight.local/ on
 // networks whose clients support it.
