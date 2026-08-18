@@ -8,6 +8,7 @@
 #include <WiFi.h>
 
 #include "ota.h"
+#include "remote_control.h"
 #include "settings.h"
 #include "signal_light.h"
 #include "web_page.h"
@@ -49,22 +50,50 @@ const char* qualityName(sound_level::Quality quality) {
   }
 }
 
-// Hand-rolled rather than pulling in a JSON library: the document is fixed,
-// small, and every value is a number or a known-safe identifier. The only
-// caller-supplied string is the SSID, which is escaped below.
-String jsonEscape(const String& in) {
-  String out;
-  out.reserve(in.length() + 8);
-  for (size_t i = 0; i < in.length(); i++) {
-    const char c = in[i];
-    if (c == '"' || c == '\\') {
+// Hand-rolled rather than pulling in a JSON library: the document is fixed
+// and small. Every value goes through one of the appenders below, each of
+// which opens and closes its own quoting. An earlier version let one field's
+// closing quote live in the next field's literal, which reads compactly right
+// up until someone inserts a number in the middle and silently invalidates
+// the whole document.
+void appendEscaped(String& out, const char* value) {
+  for (const char* c = value; *c != '\0'; c++) {
+    if (*c == '"' || *c == '\\') {
       out += '\\';
-      out += c;
-    } else if (c >= 0x20) {
-      out += c;
+      out += *c;
+    } else if (uint8_t(*c) >= 0x20) {
+      out += *c;
     }
   }
-  return out;
+}
+
+void appendKey(String& out, const char* key) {
+  if (out.length() > 1) out += ',';
+  out += '"';
+  out += key;
+  out += "\":";
+}
+
+void appendStr(String& out, const char* key, const char* value) {
+  appendKey(out, key);
+  out += '"';
+  appendEscaped(out, value);
+  out += '"';
+}
+
+void appendInt(String& out, const char* key, long value) {
+  appendKey(out, key);
+  out += value;
+}
+
+void appendBool(String& out, const char* key, bool value) {
+  appendKey(out, key);
+  out += value ? "true" : "false";
+}
+
+void appendFixed(String& out, const char* key, float value, int decimals) {
+  appendKey(out, key);
+  out += String(value, decimals);
 }
 
 void sendState() {
@@ -77,28 +106,39 @@ void sendState() {
            static_cast<unsigned long>(signal_light::manualColor() & 0xFFFFFF));
 
   String out;
-  out.reserve(320);
-  out += "{\"name\":\"" PRODUCT_NAME_JSON "\"";
-  out += ",\"version\":\"" FIRMWARE_VERSION_JSON "\"";
-  out += ",\"db\":";      out += String(latest.leqDb, 1);
-  out += ",\"units\":\"" DB_UNITS "\"";
-  out += ",\"quality\":\""; out += qualityName(latest.quality);
-  out += "\",\"mode\":\"";  out += modeName(signal_light::mode());
-  out += "\",\"zone\":\"";  out += zoneName(signal_light::zone());
-  out += "\",\"color\":\""; out += color;
-  out += "\",\"dbMin\":";      out += s.dbMin;
-  out += ",\"dbMax\":";        out += s.dbMax;
-  out += ",\"brightness\":";   out += s.brightness;
-  out += ",\"net\":\"";        out += accessPointMode ? "ap" : "sta";
-  out += "\",\"ssid\":\"";     out += jsonEscape(ssid);
-  out += "\",\"ip\":\"";       out += ip.toString();
+  out.reserve(384);
+  out += '{';
+
+  appendStr(out, "name", PRODUCT_NAME);
+  appendStr(out, "version", FIRMWARE_VERSION);
+  appendFixed(out, "db", latest.leqDb, 1);
+  appendStr(out, "units", DB_UNITS);
+  appendStr(out, "quality", qualityName(latest.quality));
+  appendStr(out, "mode", modeName(signal_light::mode()));
+  appendStr(out, "zone", zoneName(signal_light::zone()));
+  appendStr(out, "color", color);
+  appendInt(out, "dbMin", s.dbMin);
+  appendInt(out, "dbMax", s.dbMax);
+  appendInt(out, "brightness", s.brightness);
+  appendStr(out, "net", accessPointMode ? "ap" : "sta");
+  appendStr(out, "ssid", ssid.c_str());
+  appendStr(out, "ip", ip.toString().c_str());
+  appendStr(out, "test", signal_light::selfTestLabel());
+  appendStr(out, "irCode",
+            remote_control::haveLastCode() ? remote_control::lastCodeHex() : "");
+  appendStr(out, "irProtocol",
+            remote_control::haveLastCode() ? remote_control::lastProtocol() : "");
+  appendBool(out, "irMapped", remote_control::lastCodeMapped());
+  appendInt(out, "irAgeMs", remote_control::lastCodeAgeMs());
 #if FEATURE_OTA
-  out += "\",\"ota\":";       out += ota::available() ? "true" : "false";
-  out += ",\"otaUser\":\"";   out += ota::username();
-  out += "\"}";
+  appendBool(out, "ota", ota::available());
+  appendStr(out, "otaUser", ota::username());
 #else
-  out += "\",\"ota\":false,\"otaUser\":\"\"}";
+  appendBool(out, "ota", false);
+  appendStr(out, "otaUser", "");
 #endif
+
+  out += '}';
 
   server.send(200, "application/json", out);
 }
@@ -122,6 +162,14 @@ void handleSet() {
     settings::setBrightness(server.arg("brightness").toInt());
     signal_light::setBrightness(settings::get().brightness);
   }
+  sendState();
+}
+
+// Starts the LED self test. Deliberately its own route rather than a mode, so
+// it cannot be reached by accident and always leaves the light as it found it.
+void handleTest() {
+  signal_light::startSelfTest();
+  signal_light::tick();
   sendState();
 }
 
@@ -213,6 +261,7 @@ bool begin() {
   server.on("/api/version", HTTP_GET, sendVersion);
   server.on("/api/set", HTTP_POST, handleSet);
   server.on("/api/mode", HTTP_POST, handleMode);
+  server.on("/api/test", HTTP_POST, handleTest);
   server.on("/api/wifi", HTTP_POST, handleWifi);
 #if FEATURE_OTA
   ota::registerRoutes(server);

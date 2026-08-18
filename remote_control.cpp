@@ -80,6 +80,33 @@ const KeyMapping kKeyMap[] = {
 const KeyMapping* lastKey = nullptr;
 uint32_t lastAppliedMs = 0;
 
+// Diagnostics for the most recent code, mapped or not.
+bool haveLast = false;
+char lastHex[19] = "";
+char lastProto[12] = "";
+bool lastMapped = false;
+uint32_t lastSeenMs = 0;
+
+// Written by hand because printf on this platform cannot be relied on for
+// 64-bit conversions, and the IR library's helpers all return Strings.
+void formatHex(uint64_t value, char* out, size_t size) {
+  char digits[17];
+  uint8_t n = 0;
+  if (value == 0) digits[n++] = '0';
+  while (value != 0 && n < sizeof(digits)) {
+    const uint8_t nibble = value & 0xF;
+    digits[n++] = nibble < 10 ? char('0' + nibble) : char('A' + nibble - 10);
+    value >>= 4;
+  }
+  size_t i = 0;
+  if (size > 2) {
+    out[i++] = '0';
+    out[i++] = 'x';
+  }
+  while (n > 0 && i + 1 < size) out[i++] = digits[--n];
+  out[i] = '\0';
+}
+
 const KeyMapping* lookup(uint64_t code) {
   for (const KeyMapping& key : kKeyMap) {
     if (key.code == code) return &key;
@@ -129,6 +156,12 @@ void apply(const KeyMapping& key) {
 
 void begin() { irrecv.enableIRIn(); }
 
+bool haveLastCode() { return haveLast; }
+const char* lastCodeHex() { return lastHex; }
+const char* lastProtocol() { return lastProto; }
+bool lastCodeMapped() { return lastMapped; }
+uint32_t lastCodeAgeMs() { return haveLast ? millis() - lastSeenMs : 0; }
+
 void poll() {
   if (!irrecv.decode(&results)) return;
 
@@ -146,6 +179,14 @@ void poll() {
   }
 
   const KeyMapping* key = lookup(code);
+
+  formatHex(code, lastHex, sizeof(lastHex));
+  strncpy(lastProto, typeToString(results.decode_type).c_str(), sizeof(lastProto) - 1);
+  lastProto[sizeof(lastProto) - 1] = '\0';
+  lastMapped = key != nullptr;
+  lastSeenMs = millis();
+  haveLast = true;
+
   if (key == nullptr) {
     lastKey = nullptr;
     // Logged rather than swallowed, so a different remote can be mapped by

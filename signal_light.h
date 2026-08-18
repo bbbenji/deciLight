@@ -48,6 +48,19 @@ void updateLevel(float leqDb, uint8_t dbMin, uint8_t dbMax);
 // Blanks the LEDs briefly to acknowledge a remote command.
 void flashAck();
 
+// Runs a fixed colour sequence so a freshly wired ring can be checked against
+// what it is supposed to be showing. Red and green come first and adjacent on
+// purpose: WS2812 rings ship in both GRB and RGB orderings, and if those two
+// appear swapped the ring is wired the other way round - which otherwise
+// presents as the light showing red in a quiet room, indistinguishable from a
+// threshold problem. Only the ring is overridden - the mode carries on
+// underneath, so the light resumes on its own when the sequence ends.
+void startSelfTest();
+bool selfTestRunning();
+
+// The colour that should be showing right now, or "" when not testing.
+const char* selfTestLabel();
+
 // Call from loop(). Ends expired flashes and pushes pending changes to the
 // LEDs; a no-op when nothing has changed.
 void tick();

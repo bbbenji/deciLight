@@ -173,8 +173,8 @@ At boot, for a couple of seconds:
 
     ┌────────────────────────────────┐
     │                                │
-    │        deciLight               │
-    │          x.x.x                 │
+    │           deciLight            │
+    │             x.x.x              │
     │                                │
     └────────────────────────────────┘
 

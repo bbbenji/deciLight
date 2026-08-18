@@ -76,6 +76,10 @@ class Device:
         self.smoothed = None
         self.fixed_level = fixed_level
         self.started = time.time()
+        # Self test and last-seen IR code, so the diagnostics card has
+        # something to draw without a board attached.
+        self.test_started = None
+        self.ir = None
 
     # --- measurement ---
 
@@ -117,8 +121,23 @@ class Device:
 
     # --- endpoints ---
 
+    TEST_STEPS = [("red", 1.2), ("green", 1.2), ("blue", 1.2), ("white", 1.2), ("off", 0.4)]
+
+    def test_label(self):
+        """Mirrors the firmware's sequence and timings."""
+        if self.test_started is None:
+            return ""
+        elapsed = time.time() - self.test_started
+        for label, seconds in self.TEST_STEPS:
+            if elapsed < seconds:
+                return label
+            elapsed -= seconds
+        self.test_started = None
+        return ""
+
     def state(self):
         db, quality = self.sample()
+        code, protocol, mapped, seen = self.ir or ("", "", False, 0)
         return {
             "name": CFG.get("PRODUCT_NAME", "deciLight"),
             "version": CFG.get("FIRMWARE_VERSION", "0.0.0"),
@@ -136,6 +155,11 @@ class Device:
             "ip": "127.0.0.1",
             "ota": True,
             "otaUser": CFG.get("OTA_USERNAME", "decilight"),
+            "test": self.test_label(),
+            "irCode": code,
+            "irProtocol": protocol,
+            "irMapped": mapped,
+            "irAgeMs": int((time.time() - seen) * 1000) if code else 0,
         }
 
     def set(self, args):
@@ -202,6 +226,19 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, json.dumps(self.device.state()))
             else:
                 self._send(400, "unknown mode", "text/plain")
+        elif path == "/api/test":
+            self.device.test_started = time.time()
+            self._send(200, json.dumps(self.device.state()))
+        elif path == "/api/ir":
+            # Not a firmware endpoint. Injects a fake key press so the
+            # diagnostics readout can be laid out without a receiver.
+            self.device.ir = (
+                args.get("code", ["0xF700FF"])[0],
+                args.get("protocol", ["NEC"])[0],
+                args.get("mapped", ["true"])[0] == "true",
+                time.time(),
+            )
+            self._send(200, json.dumps(self.device.state()))
         elif path == "/api/wifi":
             if "ssid" not in args:
                 self._send(400, "ssid required", "text/plain")
@@ -237,7 +274,34 @@ def check_contract() -> int:
     """
     src = (ROOT / "web_control.cpp").read_text()
     body = src[src.index("void sendState()") : src.index("void handleRoot()")]
-    firmware = set(re.findall(r'\\"(\w+)\\":', body))
+
+    # Assemble the document the firmware would send, from the source rather
+    # than from a hand-written copy of it. A hand-written copy is exactly how
+    # a stray quote once survived review: the transcription silently fixed it.
+    APPENDERS = {"appendStr": '"x"', "appendInt": "1", "appendBool": "true",
+                 "appendFixed": "1.0"}
+    fields = re.findall(r'append(Str|Int|Bool|Fixed)\(out,\s*"(\w+)"', body)
+    assembled = "{" + ",".join(
+        f'"{name}":{APPENDERS["append" + kind]}' for kind, name in fields
+    ) + "}"
+    try:
+        json.loads(assembled)
+    except ValueError as exc:
+        print(f"  the assembled document is not valid JSON: {exc}")
+        print(f"  {assembled}")
+        return 1
+
+    # Any hand-rolled fragment defeats the appenders' guarantee that each
+    # value closes its own quoting, so the style is enforced rather than
+    # merely encouraged. The braces are appended as chars, not strings.
+    raw = re.findall(r'out \+= "(?:[^"\\]|\\.)*"', body)
+    if raw:
+        print("  sendState() builds JSON by hand instead of using the appenders:")
+        for fragment in raw:
+            print(f"    {fragment}")
+        return 1
+
+    firmware = {name for _, name in fields}
     mock = set(Device().state())
 
     missing = firmware - mock
@@ -249,7 +313,7 @@ def check_contract() -> int:
     if missing or extra:
         print(f"\n{len(missing) + len(extra)} field(s) out of step with web_control.cpp")
         return 1
-    print(f"  {len(firmware)} fields match web_control.cpp")
+    print(f"  {len(firmware)} fields match web_control.cpp, document parses")
     return 0
 
 

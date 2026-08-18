@@ -55,7 +55,16 @@ button.on{background:#5b8cff;border-color:#5b8cff;color:#0d1017;font-weight:600}
 .sw i{aspect-ratio:1;border-radius:8px;border:1px solid #0006;cursor:pointer}
 .sw i:active{transform:scale(.9)}
 details{margin-top:2px}
-summary{color:var(--dim);font-size:13px;cursor:pointer;padding:4px 0}
+summary{color:var(--dim);font-size:13px;cursor:pointer;padding:4px 0;
+list-style:none;-webkit-tap-highlight-color:transparent}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"\25B8";display:inline-block;width:1.1em;
+transition:transform .15s;color:var(--dim)}
+details[open]>summary::before{transform:rotate(90deg)}
+summary.adv{color:var(--text);font-size:14px;font-weight:600}
+details.sub{border-top:1px solid var(--line);margin:0;padding:2px 0 2px 4px}
+details.sub:first-of-type{margin-top:10px}
+details.sub[open]{padding-bottom:10px}
 input[type=text],input[type=password]{width:100%;padding:10px;margin-top:8px;
 border-radius:10px;border:1px solid var(--line);background:#242835;
 color:var(--text);font:inherit;font-size:15px}
@@ -63,7 +72,9 @@ color:var(--text);font:inherit;font-size:15px}
 input[type=file]{width:100%;margin-top:8px;color:var(--dim);font-size:13px}
 .bar{height:6px;border-radius:3px;background:#242835;margin-top:12px;overflow:hidden}
 .bar i{display:block;height:100%;width:0;background:#5b8cff;transition:width .2s}
-#otanote{color:var(--dim);font-size:13px;margin-top:8px;min-height:1.2em}
+#otanote,#testnote,#irnote{color:var(--dim);font-size:13px;margin-top:10px}
+#testnote.live{color:var(--text);font-weight:600}
+#irnote b{color:var(--text);font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -95,21 +106,31 @@ input[type=file]{width:100%;margin-top:8px;color:var(--dim);font-size:13px}
 
 <div class="card">
   <details>
-    <summary>Join a WiFi network</summary>
-    <input type="text" id="ssid" placeholder="Network name" autocapitalize="off" autocorrect="off">
-    <input type="password" id="pass" placeholder="Password">
-    <div class="row" style="margin-top:12px"><button id="wsave">Save and restart</button></div>
-  </details>
-</div>
+    <summary class="adv">Advanced</summary>
 
-<div class="card" id="otacard" hidden>
-  <details>
-    <summary>Update firmware</summary>
-    <input type="password" id="otapass" placeholder="Update password">
-    <input type="file" id="otafile" accept=".bin">
-    <div class="row" style="margin-top:12px"><button id="otago">Upload and restart</button></div>
-    <div class="bar" id="otabar" hidden><i id="otafill"></i></div>
-    <div id="otanote"></div>
+    <details class="sub">
+      <summary>Join a WiFi network</summary>
+      <input type="text" id="ssid" placeholder="Network name" autocapitalize="off" autocorrect="off">
+      <input type="password" id="pass" placeholder="Password">
+      <div class="row" style="margin-top:12px"><button id="wsave">Save and restart</button></div>
+    </details>
+
+    <details class="sub">
+      <summary>Diagnostics</summary>
+      <div class="row" style="margin-top:12px"><button id="testgo">Test the LEDs</button></div>
+      <div id="testnote">Cycles red, green, blue, white. If red and green look
+        swapped, the ring is RGB rather than GRB. Runs at the current brightness.</div>
+      <div id="irnote">No remote signal received yet.</div>
+    </details>
+
+    <details class="sub" id="otacard" hidden>
+      <summary>Update firmware</summary>
+      <input type="password" id="otapass" placeholder="Update password">
+      <input type="file" id="otafile" accept=".bin">
+      <div class="row" style="margin-top:12px"><button id="otago">Upload and restart</button></div>
+      <div class="bar" id="otabar" hidden><i id="otafill"></i></div>
+      <div id="otanote"></div>
+    </details>
   </details>
 </div>
 
@@ -184,9 +205,30 @@ function render(s){
   paint();
   $("otacard").hidden=!s.ota;
   otaUser=s.otaUser||"";
+
+  var t=$("testnote");
+  if(s.test){
+    t.textContent="Showing "+s.test.toUpperCase()+" - the ring should match.";
+    t.className="live";
+  }else if(t.className=="live"){
+    t.textContent="Test finished.";
+    t.className="";
+  }
+  $("irnote").innerHTML=irLine(s);
   $("net").textContent=s.name+" "+s.version+" \u00b7 "+(s.net=="ap"
     ? "Access point "+s.ssid
     : "Connected to "+s.ssid)+" \u00b7 "+s.ip;
+}
+
+$("testgo").onclick=function(){ post("/api/test",""); };
+
+function irLine(s){
+  if(!s.irCode) return "No remote signal received yet.";
+  var age=s.irAgeMs<1000 ? "just now"
+        : s.irAgeMs<60000 ? Math.round(s.irAgeMs/1000)+"s ago"
+        : Math.round(s.irAgeMs/60000)+"m ago";
+  return (s.irMapped?"Mapped key ":"Unmapped code ")+"<b>"+s.irCode+"</b> ("+
+         s.irProtocol+"), "+age;
 }
 
 $("otago").onclick=function(){

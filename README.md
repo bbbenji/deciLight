@@ -113,12 +113,21 @@ Behind the page is a small HTTP API, if you would rather script it:
 | `GET /api/version` | Just the product name and firmware version. Separate from `/api/state` so checking what a unit is running does not require pulling a live measurement - which is the question worth asking right after an over-the-air update |
 | `POST /api/set` | `dbMin`, `dbMax`, `brightness` - any subset |
 | `POST /api/mode` | `mode=auto`, `mode=off`, or `mode=manual&color=RRGGBB` |
+| `POST /api/test` | Runs the LED self test |
 | `POST /api/wifi` | `ssid`, `pass` - saved to flash, then the unit restarts |
 | `POST /api/update` | Multipart firmware upload. Requires HTTP basic auth, and is refused entirely unless `OTA_PASSWORD` is set |
 
 Every value is clamped by the same code that guards the remote, so no request can produce an unusable device.
 
 There is no authentication on the settings endpoints. Anything that can reach the unit can change its thresholds or colour, which is the right trade for a classroom light on a local network, but do not expose it to the internet. Firmware upload is the exception and is treated separately below.
+
+#### Checking a new build
+
+Two things in the Diagnostics section of the page exist for the hour after a unit is first assembled.
+
+**Test the LEDs** walks the ring through red, green, blue and white, a little over a second each, and the page says which colour should be showing. Red and green come first and adjacent deliberately: WS2812 rings ship in both GRB and RGB orderings, and if those two look swapped the ring is wired the other way round. Without a known pattern that presents as the light showing red in a quiet room, which is indistinguishable from a threshold or hysteresis problem. White is last because it is the worst case for the power budget, so a marginal supply shows up there. The test only overrides what reaches the ring - the mode carries on underneath, so anything chosen while it runs takes effect the moment it ends.
+
+**The last remote code** is shown below it: the code, its protocol, whether it is in the key map, and how long ago it arrived. That is enough to check a receiver is alive without a serial cable, and it turns mapping an unfamiliar remote into reading numbers off a phone. Add the code to `kKeyMap` in `remote_control.cpp` to bind it. Hold-down repeats are not recorded, since they would only overwrite the code you are trying to read.
 
 #### Updating over the air
 

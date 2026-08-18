@@ -8,6 +8,8 @@
 
 #include "harness.h"
 
+#include <string.h>
+
 #include <FastLED.h>
 
 #include "../config.h"
@@ -164,6 +166,80 @@ void test_signal_light() {
 
   // A narrow window is reachable from the remote, and naive hysteresis would
   // let the two thresholds' guard bands overlap and strand the light.
+  // The sequence exists so a freshly wired ring can be compared against what
+  // it is meant to be showing, so the colours must be exactly those and the
+  // labels must agree with them.
+  CASE("the self test walks red, green, blue, white");
+  start();
+  settleAt(30, kMin, kMax);
+  signal_light::startSelfTest();
+  signal_light::tick();
+  CHECK(signal_light::selfTestRunning(), "the test did not start");
+
+  const char* wantLabel[] = {"red", "green", "blue", "white", "off"};
+  const uint32_t wantColor[] = {0xFF0000, 0x00FF00, 0x0000FF, 0xFFFFFF, 0x000000};
+  for (int i = 0; i < 5; i++) {
+    CHECK(fakes::lastColor() == wantColor[i], "step %d showed 0x%06X, want 0x%06X", i,
+          fakes::lastColor(), wantColor[i]);
+    CHECK(strcmp(signal_light::selfTestLabel(), wantLabel[i]) == 0,
+          "step %d is labelled '%s', want '%s'", i, signal_light::selfTestLabel(),
+          wantLabel[i]);
+    fakes::advanceMillis(1500);
+    signal_light::tick();
+  }
+  CHECK(!signal_light::selfTestRunning(), "the test never finished");
+
+  CASE("measurements cannot take the ring over mid-test");
+  start();
+  settleAt(30, kMin, kMax);
+  signal_light::startSelfTest();
+  signal_light::tick();
+  for (int i = 0; i < 20; i++) {
+    signal_light::updateLevel(95.0f, kMin, kMax);  // loud enough to force red
+    signal_light::tick();
+  }
+  CHECK(fakes::lastColor() == 0xFF0000 && signal_light::selfTestRunning(),
+        "a measurement disturbed the test");
+
+  CASE("the mode carries on underneath the test");
+  start();
+  signal_light::setManualColor(CRGB::Blue);
+  signal_light::tick();
+  signal_light::startSelfTest();
+  for (int i = 0; i < 6; i++) {
+    fakes::advanceMillis(1500);
+    signal_light::tick();
+  }
+  CHECK(signal_light::mode() == signal_light::Mode::Manual, "mode was disturbed");
+  CHECK(fakes::lastColor() == uint32_t(CRGB::Blue), "colour did not resume: 0x%06X",
+        fakes::lastColor());
+
+  CASE("a colour chosen during the test survives it");
+  start();
+  settleAt(30, kMin, kMax);
+  signal_light::startSelfTest();
+  signal_light::tick();
+  signal_light::setManualColor(CRGB::Cyan);   // picked mid-test
+  for (int i = 0; i < 6; i++) {
+    fakes::advanceMillis(1500);
+    signal_light::tick();
+  }
+  CHECK(fakes::lastColor() == uint32_t(CRGB::Cyan), "the mid-test choice was reverted: 0x%06X",
+        fakes::lastColor());
+
+  CASE("a test started from auto returns to following the level");
+  start();
+  settleAt(30, kMin, kMax);
+  signal_light::startSelfTest();
+  for (int i = 0; i < 6; i++) {
+    fakes::advanceMillis(1500);
+    signal_light::tick();
+  }
+  CHECK(signal_light::mode() == signal_light::Mode::Auto, "mode was disturbed");
+  settleAt(95.0f, kMin, kMax);
+  CHECK(fakes::lastColor() == COLOR_LOUD, "did not resume following the level: %s",
+        colorName(fakes::lastColor()));
+
   CASE("a minimum-width threshold window still resolves to a colour");
   start();
   const uint8_t narrowMin = 50, narrowMax = 50 + DB_MIN_SPAN;

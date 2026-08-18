@@ -26,6 +26,26 @@ bool dirty = true;
 uint32_t flashUntilMs = 0;
 constexpr uint32_t kFlashDurationMs = 120;
 
+// The self-test sequence. White is last because it is the worst case for the
+// power budget, so if the supply is marginal that is where it shows.
+struct TestStep {
+  uint32_t rgb;
+  uint32_t ms;
+  const char* label;
+};
+const TestStep kSelfTest[] = {
+    {0xFF0000, 1200, "red"},
+    {0x00FF00, 1200, "green"},
+    {0x0000FF, 1200, "blue"},
+    {0xFFFFFF, 1200, "white"},
+    {0x000000, 400, "off"},
+};
+constexpr uint8_t kSelfTestSteps = sizeof(kSelfTest) / sizeof(kSelfTest[0]);
+
+bool testActive = false;
+uint8_t testStep = 0;
+uint32_t testStepUntilMs = 0;
+
 CRGB zoneColor(Zone zone) {
   switch (zone) {
     case Zone::Quiet: return CRGB(COLOR_QUIET);
@@ -63,6 +83,9 @@ Zone zoneFor(float db, float dbMin, float dbMax, Zone from) {
 
 // The colour the LEDs should be showing right now, given mode and flash state.
 CRGB targetColor() {
+  // Outranks everything else: the point of the test is that what is on the
+  // ring is known, not derived.
+  if (testActive) return CRGB(kSelfTest[testStep].rgb);
   if (flashUntilMs != 0) return CRGB::Black;
   switch (currentMode) {
     case Mode::Off:    return CRGB::Black;
@@ -87,6 +110,8 @@ void begin(uint8_t brightness) {
   currentZone = Zone::Unknown;
   smoothedDb = NAN;
   flashUntilMs = 0;
+  testActive = false;
+  testStep = 0;
 
   fill_solid(leds, LED_COUNT, CRGB::Black);
   FastLED.show();
@@ -133,6 +158,20 @@ void updateLevel(float leqDb, uint8_t dbMin, uint8_t dbMax) {
   dirty = true;
 }
 
+void startSelfTest() {
+  // The mode is deliberately left alone. Only what reaches the ring is
+  // overridden, so a colour or mode chosen while the test is running still
+  // takes effect the moment it ends, rather than being reverted.
+  testActive = true;
+  testStep = 0;
+  testStepUntilMs = millis() + kSelfTest[0].ms;
+  dirty = true;
+}
+
+bool selfTestRunning() { return testActive; }
+
+const char* selfTestLabel() { return testActive ? kSelfTest[testStep].label : ""; }
+
 void flashAck() {
   flashUntilMs = millis() + kFlashDurationMs;
   if (flashUntilMs == 0) flashUntilMs = 1;  // 0 is the "not flashing" marker
@@ -140,7 +179,17 @@ void flashAck() {
 }
 
 void tick() {
-  // Signed comparison, so this survives the millis() rollover.
+  // Signed comparisons throughout, so these survive the millis() rollover.
+  if (testActive && static_cast<int32_t>(millis() - testStepUntilMs) >= 0) {
+    testStep++;
+    if (testStep >= kSelfTestSteps) {
+      testActive = false;
+    } else {
+      testStepUntilMs = millis() + kSelfTest[testStep].ms;
+    }
+    dirty = true;
+  }
+
   if (flashUntilMs != 0 && static_cast<int32_t>(millis() - flashUntilMs) >= 0) {
     flashUntilMs = 0;
     dirty = true;

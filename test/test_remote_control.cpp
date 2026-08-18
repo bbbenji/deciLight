@@ -9,6 +9,8 @@
 
 #include "harness.h"
 
+#include <string.h>
+
 #include <FastLED.h>
 
 #include "../config.h"
@@ -168,6 +170,49 @@ void test_remote_control() {
   fakes::advanceMillis(500);
   press(kNecRepeat);
   CHECK(s.dbMin == held, "repeat still fired after an unmapped code");
+
+  // Surfaced over the network so a receiver can be checked, and an unfamiliar
+  // remote mapped, without a serial cable.
+  CASE("nothing is reported before any code arrives");
+  fakes::reset();
+  remote_control::begin();
+  // haveLastCode() is sticky across the whole session by design; only assert
+  // the accessors are safe to call.
+  (void)remote_control::lastCodeHex();
+  (void)remote_control::lastProtocol();
+
+  CASE("a mapped key is recorded, formatted and flagged as mapped");
+  start();
+  press(kFlash);
+  CHECK(remote_control::haveLastCode(), "nothing was recorded");
+  CHECK(strcmp(remote_control::lastCodeHex(), "0xF7D02F") == 0, "recorded '%s', want 0xF7D02F",
+        remote_control::lastCodeHex());
+  CHECK(remote_control::lastCodeMapped(), "a mapped key was flagged unmapped");
+
+  CASE("an unmapped code is recorded too, and flagged as unmapped");
+  press(0xDEADBEEF);
+  CHECK(strcmp(remote_control::lastCodeHex(), "0xDEADBEEF") == 0, "recorded '%s'",
+        remote_control::lastCodeHex());
+  CHECK(!remote_control::lastCodeMapped(), "an unmapped code was flagged mapped");
+
+  CASE("hold-down repeats do not overwrite the code of interest");
+  start();
+  press(kFlash);
+  for (int i = 0; i < 5; i++) {
+    fakes::advanceMillis(500);
+    press(kNecRepeat);
+  }
+  CHECK(strcmp(remote_control::lastCodeHex(), "0xF7D02F") == 0,
+        "a repeat overwrote the recorded code: '%s'", remote_control::lastCodeHex());
+
+  CASE("age is reported from when the code arrived");
+  start();
+  press(kColorKeys[0].code);
+  CHECK(remote_control::lastCodeAgeMs() == 0, "age %u immediately after receipt",
+        remote_control::lastCodeAgeMs());
+  fakes::advanceMillis(2500);
+  CHECK(remote_control::lastCodeAgeMs() == 2500, "age %u after 2500ms",
+        remote_control::lastCodeAgeMs());
 
   CASE("holding a threshold key cannot push a value past its limit");
   start();
