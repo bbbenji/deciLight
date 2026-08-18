@@ -29,7 +29,6 @@ Beyond its utility as a noise monitor, deciLight's color-changing feature can be
 
 - **Networked Synchronization:** The ability to pair multiple deciLights (ESP-NOW?), creating a cohesive and synchronized lighting experience across multiple units.
 - **External Display:** Show operational modes and noise thresholds in real-time.
-- **Dampening:** Currently the switch between colors based on sound level is quite abrupt. I want to implement a method to smooth out the jump by taking into account a delay or somehow use data over time.
 - **WiFi/Bluetooth control:** Adjust settings and modes via a mobile device.
 - **Multi-device control:** Control multiple deciLights via single IR remote.
 
@@ -50,5 +49,91 @@ Beyond its utility as a noise monitor, deciLight's color-changing feature can be
 
 ### Firmware:
 
-- The deciLight firmware, available on GitHub at [https://github.com/bbbenji/deciLight](https://github.com/bbbenji/deciLight), is open-source and provides a foundation for custom modifications and updates. I encouraged anyone to contribute to its development and customize their deciLight experience.
-- For alternative functionality, consider flashing deciLight with WLED, offering sound-reactive animations at the sacrifice of precise decibel readings.
+The firmware is open source and lives at [https://github.com/bbbenji/deciLight](https://github.com/bbbenji/deciLight). Contributions and customisations are very welcome.
+
+For alternative functionality, consider flashing deciLight with WLED, offering sound-reactive animations at the sacrifice of precise decibel readings.
+
+#### Layout
+
+The sketch is split by responsibility, so that adding a feature usually means touching one file. `deciLight.ino` itself is only wiring.
+
+| File | Responsibility |
+| --- | --- |
+| `deciLight.ino` | `setup()` and `loop()`, nothing else |
+| `config.h` | Every tunable value - pins, microphone datasheet figures, thresholds, colours, timing. No logic |
+| `settings.{h,cpp}` | Thresholds and brightness, clamped to safe ranges and persisted to NVS |
+| `sound_level.{h,cpp}` | I2S sampling task, IIR filtering, Leq in dB |
+| `signal_light.{h,cpp}` | LED state, colour mapping, smoothing and hysteresis |
+| `remote_control.{h,cpp}` | IR key map and what each key does |
+| `sos-iir-filter.h` | Second-Order Sections filter kernel, with a hand-written Xtensa assembly inner loop. Upstream code from [esp32-i2s-slm](https://github.com/ikostoski/esp32-i2s-slm), unmodified |
+| `math/*.m` | GNU Octave scripts that generate the equaliser coefficients for each supported microphone |
+
+`sos-iir-filter.h` emits its filter kernel as file-scope assembly, so it *defines* symbols rather than declaring them. It must be included from exactly one translation unit - currently `sound_level.cpp`. Including it anywhere else will fail at link time with duplicate definitions.
+
+#### How it works
+
+Two FreeRTOS tasks, connected by a queue:
+
+1. **Sampling task** (high priority). Reads 125ms blocks of audio from the I2S microphone at 48kHz, runs each block through the microphone equaliser and the A-weighting filter, and pushes the resulting sums of squares onto a queue. It does the minimum possible per block - no divisions, no logarithms.
+2. **Main loop.** Pulls blocks off the queue, converts them to a decibel value averaged over 250ms, feeds that through a smoothing filter, and maps the result to a colour. In between it services the IR receiver and flushes any pending settings to flash.
+
+The split matters because the FPU-heavy filtering can then be scheduled independently of the LED and remote work. The sample rate is fixed at 48kHz by the design of the IIR filters - changing it invalidates the coefficients.
+
+Colour is chosen with hysteresis rather than a bare comparison, so a room sitting exactly on a threshold does not strobe between two colours. `DB_SMOOTHING` sets how quickly the light reacts, `DB_HYSTERESIS` sets how far past a threshold the level must travel before the colour changes.
+
+#### Building
+
+Requires the ESP32 core and two libraries. Verified against ESP32 core 2.0.5, FastLED 3.10.5 and IRremoteESP8266 2.9.0.
+
+```sh
+arduino-cli config add board_manager.additional_urls \
+  https://espressif.github.io/arduino-esp32/package_esp32_index.json
+arduino-cli core update-index
+arduino-cli core install esp32:esp32@2.0.5
+
+arduino-cli lib install FastLED
+arduino-cli lib install IRremoteESP8266
+
+arduino-cli compile --fqbn esp32:esp32:firebeetle32 .
+arduino-cli upload -p /dev/ttyUSB0 --fqbn esp32:esp32:firebeetle32 .
+```
+
+A current build uses about 63% of program storage and 15% of dynamic memory, leaving plenty of room for the networking features on the roadmap.
+
+The sketch also opens directly in the Arduino IDE, and `.vscode/` carries a working configuration for the VS Code Arduino extension. Note that the `.ino` filename has to match the folder name, which is why it is `deciLight.ino`.
+
+#### Configuring
+
+Almost everything worth changing is a named constant in `config.h`:
+
+| Constant | Purpose |
+| --- | --- |
+| `PIN_*` | Pin assignment, matching `pins.txt` |
+| `DB_MIN_DEFAULT`, `DB_MAX_DEFAULT` | Thresholds a factory-fresh unit starts with |
+| `DB_LIMIT_LOW`, `DB_LIMIT_HIGH` | How far the remote may push the thresholds |
+| `DB_SMOOTHING` | How quickly the light reacts. 1.0 is instant, lower is calmer |
+| `DB_HYSTERESIS` | dB of overshoot needed before the colour changes |
+| `COLOR_QUIET`, `COLOR_WARN`, `COLOR_LOUD` | The three signal colours, `0xRRGGBB` |
+| `LED_COUNT`, `LED_BRIGHTNESS_*` | LED ring size and brightness range |
+| `LED_PSU_VOLTS`, `LED_PSU_MILLIAMPS` | Power budget FastLED dims against, rather than browning out the regulator |
+| `MIC_*` | Microphone datasheet figures. `MIC_OFFSET_DB` is the linear calibration against a reference meter |
+| `MIC_EQUALIZER`, `MIC_WEIGHTING` | Which filters to apply. Set the weighting to `C_weighting` or `None`, and update `DB_UNITS` to match |
+
+Fitting a different microphone means setting the `MIC_*` values from its datasheet and pointing `MIC_EQUALIZER` at the matching filter. Coefficients for the ICS-43432, ICS-43434, IM69D130 and SPH0645LM4H-B are derived in `math/`.
+
+#### Remote control
+
+Mapped for the 24-key NEC remote sold with cheap LED strips. Holding a key repeats it.
+
+| Key | Action |
+| --- | --- |
+| On | Return to automatic mode, colour follows the sound level |
+| Off | LEDs dark. Measurement continues |
+| Bright +/- | Brightness, in five steps. Persists across a power cycle |
+| Any colour key | Hold that colour, leaving automatic mode |
+| Flash / Strobe | Lower threshold up / down |
+| Fade / Smooth | Upper threshold up / down |
+
+Threshold changes blink the ring to confirm and print the new window to the serial console at 115200 baud. Thresholds are clamped so they can never cross or wrap, and are written to flash a few seconds after the last press, so holding a key costs one flash write rather than dozens.
+
+An unrecognised key prints its protocol and hex code to the serial console, which is enough to map a different remote: add the code to `kKeyMap` in `remote_control.cpp`.
