@@ -7,8 +7,8 @@
     "programmer": "esptool",
     "buildPreferences": [
         [
-            "upload.maximum_size",
-            "1966080"
+            "compiler.cpp.extra_flags",
+            "-D_IR_ENABLE_DEFAULT_=false -DDECODE_NEC=true -DSEND_NEC=true -DDECODE_HASH=true"
         ]
     ]
 }

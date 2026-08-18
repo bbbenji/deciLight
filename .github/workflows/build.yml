@@ -6,14 +6,33 @@ on:
   workflow_dispatch:
 
 # Pinned rather than floating. A firmware repo wants reproducible builds more
-# than it wants early warning of upstream churn, and FastLED in particular
-# moves fast enough to break a build for reasons unrelated to this project.
+# than it wants early warning of upstream churn.
+#
+# FastLED is held at 3.9.20 deliberately. The 3.10 series moved to a unity
+# build that pulls in the whole libstdc++ locale stack, which costs roughly
+# 440KB of flash for a project that only ever shows solid colours on seven
+# LEDs. Read the size budget below before raising this pin.
 env:
   FQBN: esp32:esp32:firebeetle32
   BOARD_URL: https://espressif.github.io/arduino-esp32/package_esp32_index.json
   ESP32_CORE: esp32:esp32@2.0.5
-  LIB_FASTLED: FastLED@3.10.5
+  LIB_FASTLED: FastLED@3.9.20
   LIB_IRREMOTE: IRremoteESP8266@2.9.0
+
+  # IRremoteESP8266 compiles support for around a hundred protocols by
+  # default. This project needs NEC, plus the hash fallback that lets an
+  # unrecognised remote still be identified from the serial log. Optional -
+  # the firmware builds and fits without it, just about 51KB larger.
+  IR_FLAGS: >-
+    -D_IR_ENABLE_DEFAULT_=false
+    -DDECODE_NEC=true
+    -DSEND_NEC=true
+    -DDECODE_HASH=true
+
+  # Fails the build well before the stock 1310720-byte application partition
+  # fills up. Its real job is to catch a dependency quietly ballooning, which
+  # is how this project ended up 440KB heavier than it needed to be.
+  FLASH_BUDGET: "1050000"
 
 jobs:
   # Runs first in practice: no toolchain to download, so it fails fast on a
@@ -34,23 +53,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The shipping configuration. Needs the partition override, because
-          # the FireBeetle board definition advertises the stock 1.31MB app
-          # slot while partitions.csv actually provides 1.9MB.
           - name: default (WiFi)
             id: wifi
             extra_flags: ""
-            max_size: "1966080"
             artifacts: true
 
           # Guards the compile-time switch, which is easy to break by adding an
-          # unguarded include or call. No size override here on purpose: this
-          # build is supposed to fit the stock layout, so letting it check
-          # against the board's own 1.31MB limit is the assertion.
+          # unguarded include or call.
           - name: FEATURE_WIFI=0
             id: nowifi
             extra_flags: "-DFEATURE_WIFI=0"
-            max_size: ""
             artifacts: false
 
     steps:
@@ -77,58 +89,25 @@ jobs:
 
       - name: Compile
         run: |
-          args=(compile --clean --fqbn "$FQBN" --output-dir build --warnings default)
-
-          if [ -n "${{ matrix.extra_flags }}" ]; then
-            args+=(--build-property "compiler.cpp.extra_flags=${{ matrix.extra_flags }}")
-          fi
-          if [ -n "${{ matrix.max_size }}" ]; then
-            args+=(--build-property "upload.maximum_size=${{ matrix.max_size }}")
-          fi
-
-          arduino-cli "${args[@]}" . 2>&1 | tee compile.log
+          arduino-cli compile --clean --fqbn "$FQBN" --output-dir build \
+            --warnings default \
+            --build-property "compiler.cpp.extra_flags=$IR_FLAGS ${{ matrix.extra_flags }}" \
+            . 2>&1 | tee compile.log
           # tee swallows the exit status, so check the pipe explicitly.
           exit "${PIPESTATUS[0]}"
 
-      # partitions.csv silently reverting to the board default would produce a
-      # firmware that builds and then fails to boot, so assert the layout.
-      - name: Verify partition table
-        if: matrix.id == 'wifi'
+      - name: Check size against the budget
         run: |
-          python3 - <<'PY'
-          import struct, sys, glob
-
-          path = glob.glob("build/*.partitions.bin")
-          if not path:
-              sys.exit("no partition binary was produced")
-
-          entries = {}
-          data = open(path[0], "rb").read()
-          for i in range(0, len(data), 32):
-              e = data[i:i + 32]
-              if e[:2] != b"\xaa\x50":
-                  break
-              off, size = struct.unpack("<II", e[4:12])
-              entries[e[12:28].rstrip(b"\x00").decode()] = (off, size)
-
-          for name, (off, size) in entries.items():
-              print(f"  {name:10} off=0x{off:06X} size={size:>9} ({size // 1024}K)")
-
-          failures = []
-
-          app0 = entries.get("app0")
-          if not app0 or app0[1] < 1_900_000:
-              failures.append(f"app0 is {app0} - partitions.csv was not applied")
-
-          # Thresholds saved by earlier firmware live here. Moving or resizing
-          # it silently wipes every deployed unit's settings on update.
-          if entries.get("nvs") != (0x9000, 0x5000):
-              failures.append(f"nvs moved to {entries.get('nvs')}, expected (0x9000, 0x5000)")
-
-          if failures:
-              sys.exit("\n".join(failures))
-          print("partition layout OK")
-          PY
+          used=$(grep -oP 'Sketch uses \K[0-9]+' compile.log)
+          if [ -z "$used" ]; then
+            echo "could not read the size from the build log"; exit 1
+          fi
+          echo "flash used: $used, budget: $FLASH_BUDGET"
+          if [ "$used" -gt "$FLASH_BUDGET" ]; then
+            echo "::error::firmware grew to $used bytes, over the $FLASH_BUDGET budget."
+            echo "::error::Check whether a dependency was updated before raising the budget."
+            exit 1
+          fi
 
       - name: Report size
         run: |
@@ -140,8 +119,8 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Only the .bin files. The .elf and .map from this build are 54MB and
-      # 35MB respectively and are not worth carrying.
+      # Only the .bin files. The .elf and .map are tens of megabytes and are
+      # not worth carrying.
       - name: Upload firmware
         if: matrix.artifacts
         uses: actions/upload-artifact@v4

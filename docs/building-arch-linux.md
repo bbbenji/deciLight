@@ -42,11 +42,15 @@ arduino-cli config add board_manager.additional_urls \
 arduino-cli core update-index
 arduino-cli core install esp32:esp32@2.0.5
 
-arduino-cli lib install FastLED
-arduino-cli lib install IRremoteESP8266
+arduino-cli lib install FastLED@3.9.20
+arduino-cli lib install IRremoteESP8266@2.9.0
 ```
 
 The core is a large download - a few hundred megabytes into `~/.arduino15`.
+
+FastLED is pinned at 3.9.20 on purpose. The 3.10 series costs roughly 440KB of
+extra flash for no benefit to this project; see the Building section of the
+README.
 
 Version 2.0.5 is pinned deliberately: it is what `.vscode/c_cpp_properties.json`
 points at, and core 3.x moves to a different I2S driver API that this firmware
@@ -97,18 +101,11 @@ A cable that only carries power and no data is a common cause of silence.
 
 ```sh
 cd /path/to/deciLight
-arduino-cli compile --fqbn esp32:esp32:firebeetle32 \
-  --build-property upload.maximum_size=1966080 .
+arduino-cli compile --fqbn esp32:esp32:firebeetle32 .
 ```
 
-The `--build-property` is not optional with WiFi enabled. `partitions.csv` in
-the sketch folder gives the application a 1.9MB slot, but the FireBeetle board
-definition hardcodes `upload.maximum_size=1310720` and exposes no partition
-menu, so the size check would reject a firmware that actually fits. See the
-Building section of the README for the full explanation.
-
-Building with `FEATURE_WIFI` set to `0` in `config.h` fits the stock layout and
-needs no override.
+No flags needed. The firmware fits the board's stock application partition with
+room to spare.
 
 ## 6. Flash
 
@@ -116,14 +113,10 @@ needs no override.
 arduino-cli upload -p /dev/ttyUSB0 --fqbn esp32:esp32:firebeetle32 .
 ```
 
-No `--build-property` here - `upload` flashes the existing build and does not
-repeat the size check.
-
 To do both in one go:
 
 ```sh
-arduino-cli compile --fqbn esp32:esp32:firebeetle32 \
-  --build-property upload.maximum_size=1966080 --upload -p /dev/ttyUSB0 .
+arduino-cli compile --fqbn esp32:esp32:firebeetle32 --upload -p /dev/ttyUSB0 .
 ```
 
 The FireBeetle resets into the bootloader automatically. On boards that do not,
@@ -167,7 +160,7 @@ convenience rather than a requirement.
 | --- | --- |
 | `Permission denied: '/dev/ttyUSB0'` | Not in the `uucp` group, or you have not logged out and back in since joining it. See section 3 |
 | `ModuleNotFoundError: No module named 'serial'` | `python-pyserial` is not installed. Compiling works without it, uploading does not |
-| `text section exceeds available space in board` | Missing `--build-property upload.maximum_size=1966080`. See section 5 |
+| `text section exceeds available space in board` | Almost certainly FastLED 3.10.x. Reinstall the pin: `arduino-cli lib install FastLED@3.9.20` |
 | `Could not open /dev/ttyUSB0, the port doesn't exist` | Board not plugged in, a power-only USB cable, or the serial monitor still has the port open |
 | No `/dev/ttyUSB*` on plug-in | Watch `sudo dmesg -w` while replugging. If the device enumerates and then vanishes a second later, something else has claimed it - see the two notes below |
 | Upload starts then fails partway | Drop the speed: `--build-property upload.speed=115200` |
@@ -206,10 +199,9 @@ Then `sudo udevadm control --reload-rules && sudo udevadm trigger`.
 
 ## VS Code
 
-`.vscode/arduino.json` already carries the board, port and the partition size
-override as a `buildPreferences` entry, so the Arduino extension builds and
-uploads without any of the flags above. It needs the same `arduino-cli`,
-`python-pyserial` and `uucp` setup underneath.
+`.vscode/arduino.json` already carries the board and port, plus the optional
+IRremoteESP8266 size trim as a `buildPreferences` entry. It needs the same
+`arduino-cli`, `python-pyserial` and `uucp` setup underneath.
 
 `.vscode/c_cpp_properties.json` hardcodes paths under
 `~/.arduino15/packages/esp32/hardware/esp32/2.0.5/`. If IntelliSense shows

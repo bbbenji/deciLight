@@ -68,7 +68,6 @@ The sketch is split by responsibility, so that adding a feature usually means to
 | `remote_control.{h,cpp}` | IR key map and what each key does |
 | `web_control.{h,cpp}` | WiFi bring-up and the HTTP control interface |
 | `web_page.h` | The control page, served from flash |
-| `partitions.csv` | Flash layout. Overrides the board default, which is too small once WiFi is linked in |
 | `sos-iir-filter.h` | Second-Order Sections filter kernel, with a hand-written Xtensa assembly inner loop. Upstream code from [esp32-i2s-slm](https://github.com/ikostoski/esp32-i2s-slm), unmodified |
 | `math/*.m` | GNU Octave scripts that generate the equaliser coefficients for each supported microphone |
 
@@ -116,7 +115,7 @@ Set `FEATURE_WIFI` to 0 in `config.h` to build without any of this. That saves a
 
 #### Building
 
-Requires the ESP32 core and two libraries. Verified against ESP32 core 2.0.5, FastLED 3.10.5 and IRremoteESP8266 2.9.0. Arch Linux users have a few distribution-specific hurdles - serial port groups and an easily missed dependency - covered in [docs/building-arch-linux.md](docs/building-arch-linux.md).
+Requires the ESP32 core and two libraries. Verified against ESP32 core 2.0.5, FastLED 3.9.20 and IRremoteESP8266 2.9.0. Arch Linux users have a few distribution-specific hurdles - serial port groups and an easily missed dependency - covered in [docs/building-arch-linux.md](docs/building-arch-linux.md).
 
 ```sh
 arduino-cli config add board_manager.additional_urls \
@@ -124,19 +123,26 @@ arduino-cli config add board_manager.additional_urls \
 arduino-cli core update-index
 arduino-cli core install esp32:esp32@2.0.5
 
-arduino-cli lib install FastLED
-arduino-cli lib install IRremoteESP8266
+arduino-cli lib install FastLED@3.9.20
+arduino-cli lib install IRremoteESP8266@2.9.0
 
-arduino-cli compile --fqbn esp32:esp32:firebeetle32 \
-  --build-property upload.maximum_size=1966080 .
+arduino-cli compile --fqbn esp32:esp32:firebeetle32 .
 arduino-cli upload -p /dev/ttyUSB0 --fqbn esp32:esp32:firebeetle32 .
 ```
 
-A current build uses about 68% of the application partition and 22% of dynamic memory.
+That builds to about 68% of the stock application partition, or 26% with `FEATURE_WIFI` set to 0. No flags, no custom partition table.
 
-The `--build-property` above is needed because of the flash layout. With the WiFi stack linked in the firmware no longer fits the 1.31MB application slot that the FireBeetle board definition hardcodes, and that board exposes no partition menu to change it. `partitions.csv` in the sketch folder supplies the standard `min_spiffs` layout instead - two 1.9MB OTA slots, which also leaves room for over-the-air updates later. The board definition still advertises the old limit to the size check, hence the override. `.vscode/arduino.json` carries the same override as a `buildPreferences` entry for the VS Code extension. Building with `FEATURE_WIFI` set to 0 needs none of this.
+**Pin FastLED at 3.9.20.** The 3.10 series switched to a unity build that drags in the entire libstdc++ locale stack, which costs roughly 440KB of flash on a project whose only demand of the library is solid colours on seven LEDs. Nothing needs those 440KB, and with them the firmware no longer fits the stock partition layout. CI enforces a size budget so this cannot creep back in unnoticed.
 
-The `nvs` partition keeps its stock offset and size, so thresholds saved by an earlier build survive the change.
+Optionally, trim IRremoteESP8266 down to the protocols this project uses, which saves a further 51KB:
+
+```sh
+arduino-cli compile --fqbn esp32:esp32:firebeetle32 \
+  --build-property "compiler.cpp.extra_flags=-D_IR_ENABLE_DEFAULT_=false \
+    -DDECODE_NEC=true -DSEND_NEC=true -DDECODE_HASH=true" .
+```
+
+The library compiles support for around a hundred protocols by default. This keeps NEC, which is what the bundled remote speaks, and the hash fallback so an unrecognised remote can still be identified from the serial log. It is genuinely optional - the firmware builds and fits either way - and `.vscode/arduino.json` and CI both apply it. The one thing you give up is protocol-specific decoding of non-NEC remotes: those report a stable hash rather than a named protocol and code, which is still perfectly usable for mapping keys, just less legible.
 
 The sketch also opens directly in the Arduino IDE, and `.vscode/` carries a working configuration for the VS Code Arduino extension. Note that the `.ino` filename has to match the folder name, which is why it is `deciLight.ino`.
 
