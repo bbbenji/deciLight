@@ -19,6 +19,7 @@ pushing. CI runs them on every push as a separate job from the firmware build.
 | `test_settings.cpp` | Clamping and the threshold-window invariant, repair of a bad stored pair, and that a burst of edits produces one deferred flash write rather than dozens |
 | `test_signal_light.cpp` | Colour mapping per band, that hysteresis holds steady while the level dithers across a threshold, that smoothing damps a single spike but not a sustained one, mode behaviour, and that the ring is only rewritten when the colour actually changes |
 | `test_remote_control.cpp` | Every one of the 24 keys individually, hold-to-repeat and its rate limit, and that unmapped codes change nothing |
+| `test_display.cpp` | That a missing panel is handled, that invisible changes are not redrawn, and that redraws are rate limited - a frame costs 22ms of blocked `loop()`, so how *rarely* it draws is the property worth pinning |
 
 Asserting each remote key separately is deliberate. The key map is a table of
 raw hex codes, `lookup()` returns the first match, and a duplicated code would

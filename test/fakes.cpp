@@ -1,10 +1,12 @@
 #include "fakes.h"
 
+#include <Adafruit_SSD1306.h>
 #include <Arduino.h>
 #include <FastLED.h>
 #include <IRrecv.h>
 #include <IRutils.h>
 #include <Preferences.h>
+#include <Wire.h>
 
 #include <deque>
 #include <map>
@@ -12,6 +14,7 @@
 
 SerialStub Serial;
 CFastLED FastLED;
+TwoWire Wire;
 
 namespace {
 
@@ -27,6 +30,11 @@ int writes = 0;
 
 std::deque<uint64_t> irQueue;
 
+bool panelPresent = true;
+int frames = 0;
+std::string frameText;    // text drawn in the frame being composed
+std::string lastFrame;    // text of the most recently pushed frame
+
 }  // namespace
 
 namespace fakes {
@@ -40,6 +48,10 @@ void reset() {
   nvsStr.clear();
   writes = 0;
   irQueue.clear();
+  panelPresent = true;
+  frames = 0;
+  frameText.clear();
+  lastFrame.clear();
 }
 
 void advanceMillis(uint32_t ms) { nowMs += ms; }
@@ -56,6 +68,10 @@ uint32_t storedUInt(const char* key, uint32_t fallback) {
 }
 
 void receiveIr(uint64_t code) { irQueue.push_back(code); }
+
+void setPanelPresent(bool present) { panelPresent = present; }
+int displayFrames() { return frames; }
+const char* displayText() { return lastFrame.c_str(); }
 
 }  // namespace fakes
 
@@ -126,3 +142,36 @@ bool IRrecv::decode(decode_results* results) {
 
 String typeToString(const decode_type_t, const bool) { return "NEC"; }
 String resultToHexidecimal(const decode_results* const) { return "0x0"; }
+
+// --- I2C ---
+
+void TwoWire::begin(int, int) {}
+void TwoWire::setClock(uint32_t) {}
+
+// --- SSD1306 ---
+
+bool Adafruit_SSD1306::begin(uint8_t, uint8_t, bool, bool) { return panelPresent; }
+
+void Adafruit_SSD1306::clearDisplay() { frameText.clear(); }
+void Adafruit_SSD1306::display() {
+  frames++;
+  lastFrame = frameText;
+}
+
+void Adafruit_SSD1306::setTextColor(uint16_t) {}
+void Adafruit_SSD1306::setTextSize(uint8_t) {}
+void Adafruit_SSD1306::setCursor(int16_t, int16_t) { frameText += " "; }
+
+void Adafruit_SSD1306::print(const char* s) { frameText += s; }
+void Adafruit_SSD1306::print(char c) { frameText += c; }
+void Adafruit_SSD1306::print(int v) { frameText += std::to_string(v); }
+void Adafruit_SSD1306::print(unsigned int v) { frameText += std::to_string(v); }
+void Adafruit_SSD1306::print(long v) { frameText += std::to_string(v); }
+void Adafruit_SSD1306::print(unsigned long v) { frameText += std::to_string(v); }
+void Adafruit_SSD1306::print(unsigned char v) { frameText += std::to_string((unsigned)v); }
+void Adafruit_SSD1306::print(double v, int) { frameText += std::to_string(v); }
+
+void Adafruit_SSD1306::drawRect(int16_t, int16_t, int16_t, int16_t, uint16_t) {}
+void Adafruit_SSD1306::fillRect(int16_t, int16_t, int16_t, int16_t, uint16_t) {}
+void Adafruit_SSD1306::drawFastVLine(int16_t, int16_t, int16_t, uint16_t) {}
+void Adafruit_SSD1306::drawFastHLine(int16_t, int16_t, int16_t, uint16_t) {}

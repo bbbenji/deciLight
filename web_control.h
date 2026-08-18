@@ -28,6 +28,10 @@ bool begin();
 // Call from loop(). Services at most one HTTP request.
 void tick();
 
+// The address the interface is reachable on, for display elsewhere. Valid
+// only after a successful begin().
+const char* address();
+
 // Hands the newest measurement over for the status endpoint to report.
 void publishLevel(const sound_level::Reading& reading);
 
@@ -35,6 +39,7 @@ void publishLevel(const sound_level::Reading& reading);
 
 inline bool begin() { return false; }
 inline void tick() {}
+inline const char* address() { return ""; }
 inline void publishLevel(const sound_level::Reading&) {}
 
 #endif  // FEATURE_WIFI

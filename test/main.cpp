@@ -8,6 +8,7 @@ int main() {
   test_settings();
   test_signal_light();
   test_remote_control();
+  test_display();
 
   if (g_failures == 0) {
     printf("\nall checks passed\n");

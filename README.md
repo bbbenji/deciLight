@@ -73,6 +73,7 @@ The sketch is split by responsibility, so that adding a feature usually means to
 | `web_control.{h,cpp}` | WiFi bring-up and the HTTP control interface |
 | `web_page.h` | The control page, served from flash |
 | `ota.{h,cpp}` | Over-the-air firmware updates |
+| `display.{h,cpp}` | Optional SSD1306 status screen |
 | `tools/dev-server.py` | Serves the control page against a simulated device, for working on the UI without hardware |
 | `sos-iir-filter.h` | Second-Order Sections filter kernel, with a hand-written Xtensa assembly inner loop. Upstream code from [esp32-i2s-slm](https://github.com/ikostoski/esp32-i2s-slm), unmodified |
 | `math/*.m` | GNU Octave scripts that generate the equaliser coefficients for each supported microphone |
@@ -140,12 +141,15 @@ arduino-cli core install esp32:esp32@2.0.5
 
 arduino-cli lib install FastLED@3.9.20
 arduino-cli lib install IRremoteESP8266@2.9.0
+arduino-cli lib install "Adafruit SSD1306@2.5.17"
 
 arduino-cli compile --fqbn esp32:esp32:firebeetle32 .
 arduino-cli upload -p /dev/ttyUSB0 --fqbn esp32:esp32:firebeetle32 .
 ```
 
 That builds to about 68% of the stock application partition, or 26% with `FEATURE_WIFI` set to 0. No flags, no custom partition table.
+
+Two boards are supported and CI builds both. For a generic ESP-WROOM-32 dev board - DevKit v1, DOIT, NodeMCU-32S and the like - swap the FQBN for `esp32:esp32:esp32:FlashFreq=80`. Same module, same firmware, same pins; only the board definition differs. See [docs/wiring.md](docs/wiring.md) for the two GPIOs whose behaviour is worth knowing about.
 
 **Pin FastLED at 3.9.20.** The 3.10 series switched to a unity build that drags in the entire libstdc++ locale stack, which costs roughly 440KB of flash on a project whose only demand of the library is solid colours on seven LEDs. Nothing needs those 440KB, and with them the firmware no longer fits the stock partition layout. CI enforces a size budget so this cannot creep back in unnoticed.
 
@@ -181,6 +185,14 @@ tools/dev-server.py --check     # assert its JSON still matches web_control.cpp
 
 By default it sweeps the level across the whole range every 40 seconds, so every colour, the overload note and the noise-floor note all appear without any input. CI runs `--check` on every push.
 
+#### Status screen
+
+An SSD1306 128x64 OLED on the I2C pins shows the current level, the threshold window, the operating mode and the unit's address. Wiring is in [docs/wiring.md](docs/wiring.md).
+
+It is genuinely optional. The panel is probed at both of its usual I2C addresses during boot, and if nothing answers every display call becomes a no-op, so the same firmware serves units built with and without a screen. Set `FEATURE_DISPLAY` to 0 to leave the code out entirely and save about 29KB.
+
+Sending a full frame is roughly 1KB over I2C, about 22ms during which `loop()` is blocked. Two things keep that from mattering: the module compares what it is about to draw against what is already on the panel and skips the transfer when nothing visible has changed, and even a real change is never sent more often than `DISPLAY_MIN_INTERVAL_MS`. In a steady room the screen is usually not being written at all.
+
 #### Configuring
 
 Almost everything worth changing is a named constant in `config.h`:
@@ -198,6 +210,8 @@ Almost everything worth changing is a named constant in `config.h`:
 | `MIC_*` | Microphone datasheet figures. `MIC_OFFSET_DB` is the linear calibration against a reference meter |
 | `MIC_EQUALIZER`, `MIC_WEIGHTING` | Which filters to apply. Set the weighting to `C_weighting` or `None`, and update `DB_UNITS` to match |
 | `FEATURE_WIFI` | Build with or without networking and the web interface |
+| `FEATURE_DISPLAY` | Build with or without the OLED status screen |
+| `DISPLAY_ADDRESSES`, `DISPLAY_MIN_INTERVAL_MS` | Which I2C addresses to probe, and the floor on redraw rate |
 | `WIFI_AP_SSID`, `WIFI_AP_PASSWORD` | The fallback access point |
 | `WIFI_HOSTNAME` | Also the mDNS name, so `decilight.local` follows it |
 

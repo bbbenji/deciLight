@@ -19,6 +19,7 @@ WebServer server(WEB_SERVER_PORT);
 
 bool accessPointMode = false;
 bool running = false;
+char addressText[16] = "";
 
 // Newest measurement, refreshed from loop() and read by the status endpoint.
 sound_level::Reading latest = {0.0f, sound_level::Quality::BelowNoiseFloor};
@@ -209,9 +210,15 @@ bool begin() {
   server.onNotFound(handleRoot);
   server.begin();
 
+  const IPAddress ip = accessPointMode ? WiFi.softAPIP() : WiFi.localIP();
+  strncpy(addressText, ip.toString().c_str(), sizeof(addressText) - 1);
+  addressText[sizeof(addressText) - 1] = '\0';
+
   running = true;
   return true;
 }
+
+const char* address() { return addressText; }
 
 void tick() {
   if (running) server.handleClient();

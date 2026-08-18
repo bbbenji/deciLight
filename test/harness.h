@@ -25,5 +25,6 @@ extern int g_failures;
 void test_settings();
 void test_signal_light();
 void test_remote_control();
+void test_display();
 
 #endif  // DECILIGHT_TEST_HARNESS_H

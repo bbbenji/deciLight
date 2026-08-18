@@ -32,6 +32,11 @@ uint32_t storedUInt(const char* key, uint32_t fallback);
 // --- IR ---
 void receiveIr(uint64_t code);  // queue one decoded code for the next poll()
 
+// --- display ---
+void setPanelPresent(bool present);  // whether begin() finds an SSD1306
+int displayFrames();                 // full frames pushed since reset()
+const char* displayText();           // text drawn in the most recent frame
+
 }  // namespace fakes
 
 #endif  // DECILIGHT_TEST_FAKES_H

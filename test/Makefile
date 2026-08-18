@@ -16,9 +16,10 @@ BUILD := build
 BIN   := $(BUILD)/run-tests
 
 # Firmware modules that are free of hardware dependencies and so can run here.
-FIRMWARE := ../settings.cpp ../signal_light.cpp ../remote_control.cpp
+FIRMWARE := ../settings.cpp ../signal_light.cpp ../remote_control.cpp \
+            ../display.cpp
 TESTS    := main.cpp fakes.cpp test_settings.cpp test_signal_light.cpp \
-            test_remote_control.cpp
+            test_remote_control.cpp test_display.cpp
 
 # Every module that should at least type-check. sound_level.cpp is included
 # for the syntax pass only: its filter kernel is Xtensa assembly, so it cannot

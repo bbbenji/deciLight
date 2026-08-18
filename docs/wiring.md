@@ -2,11 +2,33 @@
 
 Every module in a deciLight, and how it attaches to the ESP32.
 
+## Boards
+
+Two boards are supported, and the wiring below is the same for both:
+
+| Board | FQBN |
+| --- | --- |
+| DFRobot FireBeetle ESP32 | `esp32:esp32:firebeetle32` |
+| Generic ESP-WROOM-32 dev board (DevKit v1, DOIT, NodeMCU-32S) | `esp32:esp32:esp32:FlashFreq=80` |
+
+They carry the same ESP-WROOM-32 module, so the firmware is identical - the
+board definitions differ only in pin aliases the project never uses and in
+default flash settings. CI builds both on every push.
+
+`FlashFreq=80` on the generic board matches what the FireBeetle definition
+selects by default; leaving it off clocks the flash at 40MHz, which works but
+is slower for no reason.
+
+Every GPIO this project uses is broken out on the 30-pin DevKit v1 and on
+everything larger. If you are adapting a smaller module, the pins are all
+configurable in `config.h`.
+
 **Pin numbers here are ESP32 GPIO numbers, not board silkscreen labels.** The
-two are not the same thing on the reference board: a FireBeetle's pad marked
-`D2` is GPIO25, while the LED ring wants GPIO2, which that board marks `D9`.
-Wire by GPIO number and check against your board's own pinout. Wire colours in
-brackets match the reference build and are only a convention.
+two are not the same thing on either board: a FireBeetle's pad marked `D2` is
+GPIO25, while the LED ring wants GPIO2, which that board marks `D9`. Most
+WROOM-32 dev boards label their pads with the GPIO number directly, which is
+simpler, but check yours. Wire colours in brackets match the reference build
+and are only a convention.
 
 ## Connections
 
@@ -64,6 +86,31 @@ of the input-only pins.
    GPIO21 / SDA  ───────────────  SDA
 ```
 
+## Two pins worth knowing about
+
+**GPIO2 also drives the onboard LED.** Both board definitions set
+`LED_BUILTIN` to 2, and the LED sits on that pin behind a resistor to ground.
+That extra load is on the NeoPixel data line, which in practice is harmless -
+the reference build has always worked this way - but it does mean the onboard
+LED flickers whenever the ring is written, and on a long or marginal data lead
+it is one more thing degrading the edge. If a build misbehaves on the first
+pixel, moving `PIN_LED_DATA` in `config.h` to a plain GPIO such as 13, 25 or 27
+is the cheapest thing to try.
+
+GPIO2 is also a strapping pin, sampled at reset to decide boot mode. It needs
+to be free to sit low while GPIO0 is low, which is what the USB bridge does to
+enter download mode. A NeoPixel ring on the line does not prevent this, but if
+a board suddenly refuses to accept an upload, disconnecting the LED data lead
+is worth trying before anything more drastic.
+
+**GPIO15 is a strapping pin too**, and holding it low at reset silences the
+ROM bootloader's chatter on the serial console. The I2S peripheral drives it
+only after boot, so this has no effect in practice - it is mentioned because a
+quieter-than-expected boot log is otherwise puzzling.
+
+Nothing else in the build touches a strapping pin. GPIO12, the one that can
+brick a board by selecting the wrong flash voltage, is deliberately unused.
+
 ## Microphone channel
 
 Tie `L/R` to ground. That puts the microphone on the left-hand slot, which is
@@ -120,17 +167,26 @@ nominally want a logic high above about 3.5V when running on 5V. It works far
 more often than not. If the first pixel misbehaves while the rest are fine,
 that is the reason, and a level shifter fixes it.
 
-## Status of the display
+## What the display shows
 
-**Wired, not yet driven.** Nothing in the firmware talks to the OLED - there is
-no driver, no pin constants in `config.h`, and no library dependency. This
-section documents the hardware so the board can be built now and the code can
-follow.
+    ┌────────────────────────────────┐
+    │ AUTO                192.168.4.1│
+    │                                │
+    │  52 dBA                        │
+    │                                │
+    │        |          |            │
+    │ ███████████████░░░░░░░░░░░░░░░ │
+    │ 40 - 60                        │
+    └────────────────────────────────┘
 
-Two things worth knowing before that code gets written. Pushing a full 128x64
-frame is about 1KB over I2C, which is roughly 22ms at 400kHz - long enough to
-stall `loop()` and let the measurement queue back up, so the display will want
-partial or throttled updates rather than a redraw per measurement. And an
-SSD1306 library plus its graphics layer costs somewhere around 30-50KB of
-flash; the current build sits at 65% of the application partition, so there is
-room, but it is worth measuring against the CI size budget when the time comes.
+The operating mode and the unit's address across the top, the measured level
+in whole decibels, a bar spanning the range the thresholds are allowed to take
+with a tick above it for each threshold, and the window itself along the
+bottom. When the microphone is out of range the bottom right reads `OVER` or
+`QUIET`, which usually means a wiring problem rather than a genuinely extreme
+room.
+
+The panel is optional and probed at boot: if nothing answers at either address
+the firmware carries on without it, so the same build serves units with and
+without a screen. `FEATURE_DISPLAY` in `config.h` removes the code entirely
+and saves about 29KB of flash.

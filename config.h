@@ -13,11 +13,13 @@
 // -----------------------------------------------------------------------------
 // Pins (wire colours are for the reference build, see pins.txt)
 // -----------------------------------------------------------------------------
-constexpr uint8_t PIN_LED_DATA = 2;   // NeoPixel Jewel data in  (Y)
-constexpr uint8_t PIN_IR_RECV  = 4;   // IR receiver signal      (Y)
-constexpr uint8_t PIN_I2S_SCK  = 14;  // I2S bit clock           (G)
-constexpr uint8_t PIN_I2S_WS   = 15;  // I2S word select         (B)
-constexpr uint8_t PIN_I2S_SD   = 32;  // I2S serial data         (Y)
+constexpr uint8_t PIN_LED_DATA = 2; // NeoPixel Jewel data in  (Y)
+constexpr uint8_t PIN_IR_RECV = 4;  // IR receiver signal      (Y)
+constexpr uint8_t PIN_I2S_SCK = 14; // I2S bit clock           (G)
+constexpr uint8_t PIN_I2S_WS = 15;  // I2S word select         (B)
+constexpr uint8_t PIN_I2S_SD = 32;  // I2S serial data         (Y)
+constexpr uint8_t PIN_I2C_SDA = 21; // OLED SDA
+constexpr uint8_t PIN_I2C_SCL = 22; // OLED SCL
 
 // SCK and WS must be output-capable; SD may be an input-only pin (36-39).
 
@@ -42,26 +44,50 @@ constexpr bool SERIAL_LOG_LEVEL = true;
 // -----------------------------------------------------------------------------
 // LEDs
 // -----------------------------------------------------------------------------
-constexpr uint16_t LED_COUNT = 7;   // NeoPixel Jewel
+constexpr uint16_t LED_COUNT = 7; // NeoPixel Jewel
 
 constexpr uint8_t LED_BRIGHTNESS_DEFAULT = 255;
-constexpr uint8_t LED_BRIGHTNESS_MIN     = 10;
-constexpr uint8_t LED_BRIGHTNESS_MAX     = 255;
-constexpr uint8_t LED_BRIGHTNESS_STEP    = 51;  // 5 presses from min to max
+constexpr uint8_t LED_BRIGHTNESS_MIN = 10;
+constexpr uint8_t LED_BRIGHTNESS_MAX = 255;
+constexpr uint8_t LED_BRIGHTNESS_STEP = 51; // 5 presses from min to max
 
 // Power budget handed to FastLED, which dims globally rather than browning
 // out the regulator. Sized for a 5V 2A supply with headroom for the ESP32.
-constexpr uint8_t  LED_PSU_VOLTS      = 5;
-constexpr uint16_t LED_PSU_MILLIAMPS  = 420;
+constexpr uint8_t LED_PSU_VOLTS = 5;
+constexpr uint16_t LED_PSU_MILLIAMPS = 420;
 
 // GPIO blinked when FastLED has to throttle for the power budget.
 // Set to a pin number to enable; -1 leaves every GPIO alone.
 constexpr int8_t LED_POWER_INDICATOR_PIN = -1;
 
 // Signal colours, 0xRRGGBB.
-constexpr uint32_t COLOR_QUIET = 0x00FF00;  // below dB_min
-constexpr uint32_t COLOR_WARN  = 0xFFFF00;  // between dB_min and dB_max
-constexpr uint32_t COLOR_LOUD  = 0xFF0000;  // above dB_max
+constexpr uint32_t COLOR_QUIET = 0x00FF00; // below dB_min
+constexpr uint32_t COLOR_WARN = 0xFFFF00;  // between dB_min and dB_max
+constexpr uint32_t COLOR_LOUD = 0xFF0000;  // above dB_max
+
+// -----------------------------------------------------------------------------
+// Display
+//
+// An optional SSD1306 128x64 OLED on the I2C pins above, showing the current
+// level, the threshold window and the operating mode. Entirely optional: the
+// panel is probed at boot and everything below is skipped if nothing answers,
+// so one firmware serves units built with and without a screen.
+// -----------------------------------------------------------------------------
+#ifndef FEATURE_DISPLAY
+#define FEATURE_DISPLAY 1
+#endif
+
+constexpr uint8_t DISPLAY_WIDTH = 128;
+constexpr uint8_t DISPLAY_HEIGHT = 64;
+
+// Nearly all of these modules answer at 0x3C; a few are strapped to 0x3D.
+// Both are probed, in this order.
+constexpr uint8_t DISPLAY_ADDRESSES[] = {0x3C, 0x3D};
+
+// Pushing a full frame is about 1KB over I2C - roughly 22ms at 400kHz, during
+// which loop() is blocked. The frame is only sent when something visible has
+// actually changed, and never more often than this.
+constexpr uint32_t DISPLAY_MIN_INTERVAL_MS = 250;
 
 // -----------------------------------------------------------------------------
 // Thresholds
@@ -71,9 +97,9 @@ constexpr uint8_t DB_MAX_DEFAULT = 60;
 
 // Hard limits the remote cannot push the thresholds past, plus the smallest
 // allowed window between them. Guards against wrap-around and unusable setups.
-constexpr uint8_t DB_LIMIT_LOW  = 30;
+constexpr uint8_t DB_LIMIT_LOW = 30;
 constexpr uint8_t DB_LIMIT_HIGH = 110;
-constexpr uint8_t DB_MIN_SPAN   = 2;
+constexpr uint8_t DB_MIN_SPAN = 2;
 
 // -----------------------------------------------------------------------------
 // Dampening
@@ -87,7 +113,7 @@ constexpr uint8_t DB_MIN_SPAN   = 2;
 //   HYSTERESIS how far past a threshold the level must go before the colour
 //              changes, in dB. Applied in both directions.
 // -----------------------------------------------------------------------------
-constexpr float DB_SMOOTHING  = 0.35f;
+constexpr float DB_SMOOTHING = 0.35f;
 constexpr float DB_HYSTERESIS = 1.5f;
 
 // -----------------------------------------------------------------------------
@@ -96,15 +122,15 @@ constexpr float DB_HYSTERESIS = 1.5f;
 // Values below are from the datasheet of the fitted microphone. MIC_EQUALIZER
 // and MIC_WEIGHTING must name filters defined in sound_level.cpp.
 // -----------------------------------------------------------------------------
-#define MIC_EQUALIZER INMP441      // 'None' disables equalisation
-#define MIC_WEIGHTING A_weighting  // 'C_weighting' or 'None' (Z-weighting)
-#define DB_UNITS      "dBA"        // match the weighting above
+#define MIC_EQUALIZER INMP441     // 'None' disables equalisation
+#define MIC_WEIGHTING A_weighting // 'C_weighting' or 'None' (Z-weighting)
+#define DB_UNITS "dBA"            // match the weighting above
 
-constexpr double MIC_SENSITIVITY = -26.0;   // dBFS produced at MIC_REF_DB
-constexpr double MIC_REF_DB      = 94.0;    // dB the sensitivity is quoted at
-constexpr double MIC_OVERLOAD_DB = 116.0;   // acoustic overload point
-constexpr double MIC_NOISE_DB    = 29.0;    // noise floor
-constexpr int    MIC_BITS        = 24;      // valid bits in the I2S frame
+constexpr double MIC_SENSITIVITY = -26.0; // dBFS produced at MIC_REF_DB
+constexpr double MIC_REF_DB = 94.0;       // dB the sensitivity is quoted at
+constexpr double MIC_OVERLOAD_DB = 116.0; // acoustic overload point
+constexpr double MIC_NOISE_DB = 29.0;     // noise floor
+constexpr int MIC_BITS = 24;              // valid bits in the I2S frame
 
 // Sine-wave RMS vs. dBFS. Nudge this to calibrate against a reference meter.
 constexpr double MIC_OFFSET_DB = 3.0103;
@@ -133,7 +159,7 @@ constexpr char WIFI_HOSTNAME[] = "decilight";
 
 // Fallback access point. The password must be at least 8 characters, or empty
 // for an open network.
-constexpr char WIFI_AP_SSID[]     = "deciLight";
+constexpr char WIFI_AP_SSID[] = "deciLight";
 constexpr char WIFI_AP_PASSWORD[] = "decilight";
 
 // How long to wait for the stored network before giving up and starting the
@@ -160,31 +186,32 @@ constexpr uint16_t WEB_SERVER_PORT = 80;
 #endif
 
 constexpr char OTA_USERNAME[] = "decilight";
-constexpr char OTA_PASSWORD[] = "";  // empty disables OTA entirely
+constexpr char OTA_PASSWORD[] = "decilight"; // empty disables OTA entirely
 
 // Held on the ring while an update is being written, so a room can see why the
 // light stopped responding. The unit restarts on its own afterwards.
 constexpr uint32_t COLOR_UPDATING = 0x0000FF;
-constexpr uint32_t COLOR_FAILED   = 0xFF00FF;
+constexpr uint32_t COLOR_FAILED = 0xFF00FF;
 
 // -----------------------------------------------------------------------------
 // Sampling
 // -----------------------------------------------------------------------------
-constexpr uint32_t SAMPLE_RATE = 48000;  // fixed by the IIR filter design
+constexpr uint32_t SAMPLE_RATE = 48000; // fixed by the IIR filter design
 constexpr uint32_t SAMPLE_BITS = 32;
 
 // Sample blocks handed from the I2S task to the main loop. 1/8s is a good
 // trade between filter efficiency and how promptly overloads are noticed.
-constexpr uint32_t SAMPLES_PER_BLOCK = SAMPLE_RATE / 8;  // 6000 = 125ms
+constexpr uint32_t SAMPLES_PER_BLOCK = SAMPLE_RATE / 8; // 6000 = 125ms
 
 // Averaging window for the reported Leq, rounded up to whole blocks.
 // 250ms means every reported value averages two blocks.
-constexpr uint32_t LEQ_PERIOD_MS   = 250;
+constexpr uint32_t LEQ_PERIOD_MS = 250;
 constexpr uint32_t LEQ_BLOCK_COUNT =
-    (LEQ_PERIOD_MS * SAMPLE_RATE / 1000 + SAMPLES_PER_BLOCK - 1) / SAMPLES_PER_BLOCK;
+    (LEQ_PERIOD_MS * SAMPLE_RATE / 1000 + SAMPLES_PER_BLOCK - 1) /
+    SAMPLES_PER_BLOCK;
 
 // How long the main loop parks on the measurement queue before servicing the
 // remote again. Caps worst-case IR latency without spinning.
 constexpr uint32_t LOOP_POLL_MS = 20;
 
-#endif  // DECILIGHT_CONFIG_H
+#endif // DECILIGHT_CONFIG_H

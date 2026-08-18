@@ -33,6 +33,7 @@
  *   sound_level.*     I2S sampling, IIR filtering, Leq in dB
  *   signal_light.*    LED state, colour mapping, smoothing and hysteresis
  *   remote_control.*  IR key map and what each key does
+ *   display.*         optional SSD1306 status screen
  *   web_control.*     WiFi bring-up and the HTTP control interface
  *   web_page.h        the page served to the browser
  *   sos-iir-filter.h  filter kernel, upstream, do not include twice
@@ -41,6 +42,7 @@
  */
 
 #include "config.h"
+#include "display.h"
 #include "remote_control.h"
 #include "settings.h"
 #include "signal_light.h"
@@ -66,6 +68,8 @@ void setup() {
   signal_light::begin(settings::get().brightness);
   remote_control::begin();
 
+  display::begin();
+
   micReady = sound_level::begin();
   if (!micReady) {
     Serial.println(F("deciLight: no microphone, running in remote-only mode"));
@@ -74,7 +78,11 @@ void setup() {
 
   // Networking comes up last: it is the slowest step and the only optional
   // one, so everything else is already serving the room while it connects.
-  web_control::begin();
+  if (web_control::begin()) {
+    display::setStatus(web_control::address());
+  } else {
+    display::setStatus(FEATURE_WIFI ? "no wifi" : "");
+  }
 
   const Settings& s = settings::get();
   Serial.printf("deciLight ready, thresholds %u - %u " DB_UNITS "\n", s.dbMin, s.dbMax);
@@ -84,6 +92,7 @@ void loop() {
   remote_control::poll();
   web_control::tick();
   signal_light::tick();
+  display::tick();
   settings::tick();
 
   if (!micReady) {
@@ -107,4 +116,6 @@ void loop() {
 
   const Settings& s = settings::get();
   signal_light::updateLevel(reading.leqDb, s.dbMin, s.dbMax);
+  display::update(reading.leqDb, reading.quality, s, signal_light::mode(),
+                  signal_light::zone());
 }

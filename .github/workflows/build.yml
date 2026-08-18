@@ -13,11 +13,15 @@ on:
 # 440KB of flash for a project that only ever shows solid colours on seven
 # LEDs. Read the size budget below before raising this pin.
 env:
-  FQBN: esp32:esp32:firebeetle32
   BOARD_URL: https://espressif.github.io/arduino-esp32/package_esp32_index.json
   ESP32_CORE: esp32:esp32@2.0.5
   LIB_FASTLED: FastLED@3.9.20
   LIB_IRREMOTE: IRremoteESP8266@2.9.0
+  # The SSD1306 status screen. BusIO and GFX are pulled in as dependencies but
+  # are pinned explicitly so a build is reproducible from this file alone.
+  LIB_SSD1306: "Adafruit SSD1306@2.5.17"
+  LIB_GFX: "Adafruit GFX Library@1.12.6"
+  LIB_BUSIO: "Adafruit BusIO@1.17.4"
 
   # IRremoteESP8266 compiles support for around a hundred protocols by
   # default. This project needs NEC, plus the hash fallback that lets an
@@ -58,15 +62,28 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: default (WiFi)
-            id: wifi
+          # The two supported boards. Both carry an ESP-WROOM-32, so the
+          # firmware source is identical between them and only the board
+          # definition differs - but building both keeps it that way.
+          - name: FireBeetle ESP32
+            id: firebeetle
+            fqbn: esp32:esp32:firebeetle32
+            extra_flags: ""
+            artifacts: true
+
+          - name: ESP-WROOM-32 dev board
+            id: wroom32
+            # FlashFreq=80 matches the FireBeetle; the generic board
+            # definition would otherwise default the flash clock to 40MHz.
+            fqbn: esp32:esp32:esp32:FlashFreq=80
             extra_flags: ""
             artifacts: true
 
           # Guards the compile-time switch, which is easy to break by adding an
-          # unguarded include or call.
+          # unguarded include or call. Board-independent, so one build covers it.
           - name: FEATURE_WIFI=0
             id: nowifi
+            fqbn: esp32:esp32:firebeetle32
             extra_flags: "-DFEATURE_WIFI=0"
             artifacts: false
 
@@ -81,7 +98,7 @@ jobs:
             ~/Arduino/libraries
           # The ESP32 core is a few hundred megabytes, so a miss costs several
           # minutes. Keyed on the pinned versions above.
-          key: arduino-${{ runner.os }}-${{ env.ESP32_CORE }}-${{ env.LIB_FASTLED }}-${{ env.LIB_IRREMOTE }}
+          key: arduino-${{ runner.os }}-${{ env.ESP32_CORE }}-${{ env.LIB_FASTLED }}-${{ env.LIB_IRREMOTE }}-${{ env.LIB_SSD1306 }}
 
       - name: Install arduino-cli
         uses: arduino/setup-arduino-cli@v2
@@ -90,11 +107,12 @@ jobs:
         run: |
           arduino-cli core update-index --additional-urls "$BOARD_URL"
           arduino-cli core install --additional-urls "$BOARD_URL" "$ESP32_CORE"
-          arduino-cli lib install "$LIB_FASTLED" "$LIB_IRREMOTE"
+          arduino-cli lib install "$LIB_FASTLED" "$LIB_IRREMOTE" \
+                                  "$LIB_SSD1306" "$LIB_GFX" "$LIB_BUSIO"
 
       - name: Compile
         run: |
-          arduino-cli compile --clean --fqbn "$FQBN" --output-dir build \
+          arduino-cli compile --clean --fqbn "${{ matrix.fqbn }}" --output-dir build \
             --warnings default \
             --build-property "compiler.cpp.extra_flags=$IR_FLAGS ${{ matrix.extra_flags }}" \
             . 2>&1 | tee compile.log
@@ -130,6 +148,6 @@ jobs:
         if: matrix.artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: decilight-firmware-${{ github.sha }}
+          name: decilight-${{ matrix.id }}-${{ github.sha }}
           path: build/*.bin
           if-no-files-found: error
