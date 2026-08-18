@@ -15,6 +15,7 @@ namespace {
 // web server calls separately once the body has been consumed.
 bool authorized = false;
 bool wrote = false;
+bool started = false;  // whether the upload handler ran at all
 
 bool passwordConfigured() { return OTA_PASSWORD[0] != '\0'; }
 
@@ -25,6 +26,7 @@ void handleUpload(WebServer& server) {
     case UPLOAD_FILE_START: {
       authorized = false;
       wrote = false;
+      started = true;
 
       if (!passwordConfigured()) {
         Serial.println(F("ota: refused, no OTA_PASSWORD is set"));
@@ -34,7 +36,12 @@ void handleUpload(WebServer& server) {
       // an unauthenticated client cannot stream a whole firmware image at us
       // before being turned away.
       if (!server.authenticate(OTA_USERNAME, OTA_PASSWORD)) {
-        Serial.println(F("ota: refused, bad credentials"));
+        // Distinguishing these two saves a lot of guessing: a missing header
+        // is a client that never sent credentials, a present one that fails
+        // is genuinely the wrong username or password.
+        Serial.println(server.hasHeader("Authorization")
+                           ? F("ota: refused, wrong username or password")
+                           : F("ota: refused, no Authorization header was sent"));
         return;
       }
       authorized = true;
@@ -91,12 +98,22 @@ void handleResult(WebServer& server) {
                 "{\"error\":\"OTA is disabled until OTA_PASSWORD is set\"}");
     return;
   }
-  if (!authorized || !wrote || Update.hasError()) {
+  if (!started) {
+    server.send(400, "application/json", "{\"error\":\"no firmware was uploaded\"}");
+    return;
+  }
+  if (!authorized) {
+    // Advertise the challenge, so a client that did not send credentials
+    // preemptively - curl without -u, or a plain browser navigation - is told
+    // how to, instead of just being turned away.
+    server.sendHeader("WWW-Authenticate", "Basic realm=\"deciLight\"");
+    server.send(401, "application/json", "{\"error\":\"unauthorized\"}");
+    return;
+  }
+  if (!wrote || Update.hasError()) {
     signal_light::setManualColor(COLOR_FAILED);
     signal_light::tick();
-    server.send(authorized ? 400 : 401, "application/json",
-                authorized ? "{\"error\":\"update failed\"}"
-                           : "{\"error\":\"unauthorized\"}");
+    server.send(400, "application/json", "{\"error\":\"update failed\"}");
     return;
   }
 
@@ -109,6 +126,8 @@ void handleResult(WebServer& server) {
 }  // namespace
 
 bool available() { return passwordConfigured(); }
+
+const char* username() { return OTA_USERNAME; }
 
 bool registerRoutes(WebServer& server) {
   server.on(

@@ -6,9 +6,9 @@ Every module in a deciLight, and how it attaches to the ESP32.
 
 Two boards are supported, and the wiring below is the same for both:
 
-| Board | FQBN |
-| --- | --- |
-| DFRobot FireBeetle ESP32 | `esp32:esp32:firebeetle32` |
+| Board                                                         | FQBN                             |
+| ------------------------------------------------------------- | -------------------------------- |
+| DFRobot FireBeetle ESP32                                      | `esp32:esp32:firebeetle32`       |
 | Generic ESP-WROOM-32 dev board (DevKit v1, DOIT, NodeMCU-32S) | `esp32:esp32:esp32:FlashFreq=80` |
 
 They carry the same ESP-WROOM-32 module, so the firmware is identical - the
@@ -32,19 +32,19 @@ and are only a convention.
 
 ## Connections
 
-| Signal | GPIO | Goes to | Notes |
-| --- | --- | --- | --- |
-| LED data | 2 | Ring `DIN` | |
-| IR signal | 4 | Receiver `OUT` | |
-| I2S SCK (bit clock) | 14 | Mic `SCK` | Must be output-capable |
-| I2S WS (word select) | 15 | Mic `WS` | Must be output-capable |
-| I2S SD (data out) | 32 | Mic `SD` | May be an input-only pin (36-39) |
-| Mic channel select | - | Mic `L/R` to GND | See the note below |
-| I2C SDA | 21 | OLED `SDA` | Board default |
-| I2C SCL | 22 | OLED `SCL` | Board default |
-| 3.3V | - | Mic, IR, OLED | |
-| 5V | - | Ring `5V` | See the power note |
-| Ground | - | Everything | Must be common |
+| Signal               | GPIO | Goes to          | Notes                            |
+| -------------------- | ---- | ---------------- | -------------------------------- |
+| LED data             | 2    | Ring `DIN`       |                                  |
+| IR signal            | 4    | Receiver `OUT`   |                                  |
+| I2S SCK (bit clock)  | 14   | Mic `SCK`        | Must be output-capable           |
+| I2S WS (word select) | 15   | Mic `WS`         | Must be output-capable           |
+| I2S SD (data out)    | 32   | Mic `SD`         | May be an input-only pin (36-39) |
+| Mic channel select   | -    | Mic `L/R` to GND | See the note below               |
+| I2C SDA              | 21   | OLED `SDA`       | Board default                    |
+| I2C SCL              | 22   | OLED `SCL`       | Board default                    |
+| 3.3V                 | -    | Mic, IR, OLED    |                                  |
+| 5V                   | -    | Ring `5V`        | See the power note               |
+| Ground               | -    | Everything       | Must be common                   |
 
 The three I2S pins are the ones set in `config.h`, and unlike some chips the
 ESP32 can route them to almost any free pin, so they are a convention rather
@@ -174,7 +174,7 @@ At boot, for a couple of seconds:
     ┌────────────────────────────────┐
     │                                │
     │        deciLight               │
-    │          1.0.0                 │
+    │          x.x.x                 │
     │                                │
     └────────────────────────────────┘
 

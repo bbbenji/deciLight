@@ -17,6 +17,7 @@ has something to draw. Real behaviour still needs the board.
 """
 
 import argparse
+import base64
 import json
 import math
 import re
@@ -134,6 +135,7 @@ class Device:
             "ssid": "deciLight (dev server)",
             "ip": "127.0.0.1",
             "ota": True,
+            "otaUser": CFG.get("OTA_USERNAME", "decilight"),
         }
 
     def set(self, args):
@@ -207,7 +209,20 @@ class Handler(BaseHTTPRequestHandler):
                 print("  (pretending to save credentials and restart)")
                 self._send(200, json.dumps({"restarting": True}))
         elif path == "/api/update":
-            # Accepts and discards the body so the upload UI can be exercised.
+            # Checks credentials the same way the firmware does, so the upload
+            # flow can be exercised - including getting it wrong.
+            expected = "Basic " + base64.b64encode(
+                f"{CFG.get('OTA_USERNAME', 'decilight')}:{CFG.get('OTA_PASSWORD', '')}".encode()
+            ).decode()
+            if self.headers.get("Authorization") != expected:
+                self.send_response(401)
+                self.send_header("WWW-Authenticate", 'Basic realm="deciLight"')
+                body = json.dumps({"error": "unauthorized"}).encode()
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             print("  (pretending to accept %d bytes of firmware)" % length)
             self._send(200, json.dumps({"ok": True, "restarting": True}))
         else:

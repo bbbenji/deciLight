@@ -32,7 +32,7 @@ constexpr uint32_t SERIAL_BAUD = 115200;
 // Bump it when you flash something you want to be able to identify later -
 // with OTA in the picture, "which build is actually on that unit" stops being
 // a rhetorical question.
-#define FIRMWARE_VERSION_JSON "1.0.0"
+#define FIRMWARE_VERSION_JSON "1.0.4"
 constexpr char FIRMWARE_VERSION[] = FIRMWARE_VERSION_JSON;
 
 // The name on the splash screen. Lower-case "d" to match how the project

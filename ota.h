@@ -27,6 +27,11 @@ bool registerRoutes(WebServer& server);
 // page can hide the upload form when it would only ever fail.
 bool available();
 
+// The username the update endpoint expects. Reported by the status endpoint
+// so the page builds its credentials from the firmware's own configuration
+// rather than a hardcoded copy.
+const char* username();
+
 }  // namespace ota
 
 #endif  // FEATURE_WIFI && FEATURE_OTA

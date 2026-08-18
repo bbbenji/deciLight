@@ -120,7 +120,7 @@ var COLORS=["ff0000","ff4500","ff6347","ffa500","ffff00","00ff00","90ee90","008b
             "00ffff","87ceeb","0000ff","9370db","800080","dda0dd","40e0d0","ffffff"];
 var ZONE={quiet:"--quiet",warn:"--warn",loud:"--loud"};
 var $=function(i){return document.getElementById(i)};
-var busy=0, dragging=null;
+var busy=0, dragging=null, otaUser="";
 
 var sw=$("sw");
 COLORS.forEach(function(c){
@@ -183,6 +183,7 @@ function render(s){
   if(dragging!="sbri") $("sbri").value=s.brightness;
   paint();
   $("otacard").hidden=!s.ota;
+  otaUser=s.otaUser||"";
   $("net").textContent=s.name+" "+s.version+" \u00b7 "+(s.net=="ap"
     ? "Access point "+s.ssid
     : "Connected to "+s.ssid)+" \u00b7 "+s.ip;
@@ -194,11 +195,22 @@ $("otago").onclick=function(){
   var pass=$("otapass").value;
   if(!pass){ $("otanote").textContent="Enter the update password."; return; }
 
+  var auth;
+  try{
+    auth="Basic "+btoa(otaUser+":"+pass);
+  }catch(e){
+    // btoa only handles latin1; a password outside it cannot be encoded here.
+    $("otanote").textContent="Password contains characters this page cannot send.";
+    return;
+  }
+
   var fd=new FormData(); fd.append("firmware",f,f.name);
   var x=new XMLHttpRequest();
-  // Credentials go on open() rather than waiting for a 401 challenge, which
-  // browsers do not reliably surface for XHR.
-  x.open("POST","/api/update",true,"decilight",pass);
+  x.open("POST","/api/update",true);
+  // Sent up front rather than relying on the user/password arguments of
+  // open(): those are only used to answer a 401 challenge, so with a request
+  // this large the body would be uploaded once, rejected, and uploaded again.
+  x.setRequestHeader("Authorization",auth);
   busy=1;
   $("otabar").hidden=false;
   x.upload.onprogress=function(e){

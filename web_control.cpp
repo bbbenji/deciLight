@@ -94,9 +94,10 @@ void sendState() {
   out += "\",\"ip\":\"";       out += ip.toString();
 #if FEATURE_OTA
   out += "\",\"ota\":";       out += ota::available() ? "true" : "false";
-  out += "}";
+  out += ",\"otaUser\":\"";   out += ota::username();
+  out += "\"}";
 #else
-  out += "\",\"ota\":false}";
+  out += "\",\"ota\":false,\"otaUser\":\"\"}";
 #endif
 
   server.send(200, "application/json", out);
