@@ -113,7 +113,8 @@ Behind the page is a small HTTP API, if you would rather script it:
 | `GET /api/version` | Just the product name and firmware version. Separate from `/api/state` so checking what a unit is running does not require pulling a live measurement - which is the question worth asking right after an over-the-air update |
 | `POST /api/set` | `dbMin`, `dbMax`, `brightness`, `displayBrightness` - any subset |
 | `POST /api/mode` | `mode=auto`, `mode=off`, or `mode=manual&color=RRGGBB` |
-| `POST /api/test` | Runs the LED self test |
+| `POST /api/test` | Runs the LED self test, on the whole group |
+| `POST /api/group` | `group`, `groupLevel`, `zones`, `combine`, `inactiveLevel` - any subset. Changing the name restarts the unit |
 | `POST /api/wifi` | `ssid`, `pass` - saved to flash, then the unit restarts |
 | `POST /api/update` | Multipart firmware upload. Requires HTTP basic auth, and is refused entirely unless `OTA_PASSWORD` is set |
 
@@ -209,6 +210,32 @@ Two details matter at the dim end. Contrast zero is not the dimmest setting but 
 
 Sending a full frame is roughly 1KB over I2C, about 22ms during which `loop()` is blocked. Two things keep that from mattering: the module compares what it is about to draw against what is already on the panel and skips the transfer when nothing visible has changed, and even a real change is never sent more often than `DISPLAY_MIN_INTERVAL_MS`. In a steady room the screen is usually not being written at all.
 
+#### Groups
+
+Units that share a radio channel and a group name behave as one light. There is no pairing step: give two units the same name in the Group section of the page and they find each other.
+
+Each unit broadcasts what its microphone hears a few times a second, and each works out the group's level for itself - there is no leader and nothing to elect. Thresholds, LED brightness, mode, colour and the LED self test all propagate too, so one IR remote drives a whole room.
+
+Three per-unit settings compose into every arrangement:
+
+| Setting | What it does |
+| --- | --- |
+| Follow the group's level | Light from the group's reading rather than this unit's own microphone |
+| Zones | Which of quiet, warn and loud this unit lights for. All three by default, which is how a lone light behaves |
+| Combine | Whether the group's level is the loudest reading or the average of them |
+
+A **traffic-light stack** is three units with follow-group on, one zone each, and combine set to average - they hear the same sound, so averaging cancels per-microphone variation. Exactly one lamp is lit at a time, like a real signal. A **mirrored room** is all three zones on every unit with combine set to loudest, so any noisy corner turns the whole room red. A unit with follow-group off ignores the others entirely. Two units make a stack too, with one of them covering a pair of zones so there is no dead band.
+
+What an inactive lamp shows is configurable: dark like a real traffic signal, or a faint glow so the stack still reads as one and a dead unit is distinguishable from an unlit one.
+
+Zone masks, group name, screen brightness and the inactive level are deliberately *not* shared. They describe a unit's place in the arrangement rather than the room, and copying them would collapse a stack into three identical lights.
+
+**The channel is the thing that breaks this.** ESP-NOW only reaches peers on the same WiFi channel, and in station mode the channel belongs to whichever router the unit joined. Units on the same network are fine; units on different networks will never hear each other however they are configured. `WIFI_AP_CHANNEL` pins the fallback access point so un-networked units still land together. The Group section reports the current channel and the live peer count, because "configured but hearing nobody" is the failure worth diagnosing quickly.
+
+Membership is a convention rather than a secret: the transport is broadcast and the group name is a filter, so anything in radio range running this firmware with the same name joins in.
+
+Set `FEATURE_ESPNOW` to 0 to leave all of it out.
+
 #### Configuring
 
 Almost everything worth changing is a named constant in `config.h`:
@@ -227,6 +254,9 @@ Almost everything worth changing is a named constant in `config.h`:
 | `MIC_EQUALIZER`, `MIC_WEIGHTING` | Which filters to apply. Set the weighting to `C_weighting` or `None`, and update `DB_UNITS` to match |
 | `FEATURE_WIFI` | Build with or without networking and the web interface |
 | `FEATURE_DISPLAY` | Build with or without the OLED status screen |
+| `FEATURE_ESPNOW` | Build with or without group synchronisation |
+| `GROUP_BROADCAST_MS`, `GROUP_PEER_TIMEOUT_MS` | How often a unit speaks, and how long a silent peer still counts |
+| `WIFI_AP_CHANNEL` | Channel the fallback access point uses, so un-networked units share one |
 | `FIRMWARE_VERSION`, `PRODUCT_NAME` | Shown on the splash screen and logged at boot |
 | `DISPLAY_SPLASH_MS` | How long the splash is held before measurements take the screen |
 | `DISPLAY_ADDRESSES`, `DISPLAY_MIN_INTERVAL_MS` | Which I2C addresses to probe, and the floor on redraw rate |

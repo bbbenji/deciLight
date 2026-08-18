@@ -9,6 +9,7 @@ int main() {
   test_signal_light();
   test_remote_control();
   test_display();
+  test_group_sync();
 
   if (g_failures == 0) {
     printf("\nall checks passed\n");

@@ -173,6 +173,9 @@ void handleSet() {
     settings::setBrightness(server.arg("brightness").toInt());
     signal_light::setBrightness(settings::get().brightness);
   }
+  if (server.hasArg("dbMin") || server.hasArg("dbMax") || server.hasArg("brightness")) {
+    group_sync::publishSettings();
+  }
   if (server.hasArg("displayBrightness")) {
     settings::setDisplayBrightness(server.arg("displayBrightness").toInt());
     display::setBrightness(settings::get().displayBrightness);
@@ -221,6 +224,7 @@ void handleGroup() {
 void handleTest() {
   signal_light::startSelfTest();
   signal_light::tick();
+  group_sync::publishSelfTest();
   sendState();
 }
 
@@ -239,6 +243,7 @@ void handleMode() {
     server.send(400, "text/plain", "unknown mode");
     return;
   }
+  group_sync::publishMode();
   sendState();
 }
 

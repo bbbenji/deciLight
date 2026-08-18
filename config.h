@@ -281,7 +281,7 @@ constexpr uint8_t GROUP_MAX_PEERS = 8;
 // Bumped only when the wire format changes incompatibly. Messages carrying
 // anything else are ignored, so a half-updated group degrades to units
 // working alone rather than to nonsense.
-constexpr uint8_t GROUP_PROTOCOL_VERSION = 1;
+constexpr uint8_t GROUP_PROTOCOL_VERSION = 2;
 
 // -----------------------------------------------------------------------------
 // Over-the-air updates

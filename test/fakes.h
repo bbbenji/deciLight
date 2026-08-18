@@ -32,6 +32,14 @@ uint32_t storedUInt(const char* key, uint32_t fallback);
 // --- IR ---
 void receiveIr(uint64_t code);  // queue one decoded code for the next poll()
 
+// --- ESP-NOW ---
+int groupPacketsSent();
+int groupPacketLength();                      // length of the most recent send
+const uint8_t* groupPacket();                 // bytes of the most recent send
+void deliverGroupPacket(const uint8_t* mac, const uint8_t* data, int len);
+void setChannel(uint8_t channel);
+void setWifiMode(int mode);
+
 // --- display ---
 void setPanelPresent(bool present);  // whether begin() finds an SSD1306
 int displayFrames();                 // full frames pushed since reset()

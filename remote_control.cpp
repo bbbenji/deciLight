@@ -7,6 +7,7 @@
 #include <IRutils.h>
 
 #include "config.h"
+#include "group_sync.h"
 #include "settings.h"
 #include "signal_light.h"
 
@@ -120,20 +121,26 @@ void reportThresholds() {
   const Settings& s = settings::get();
   Serial.printf("thresholds: %u - %u " DB_UNITS "\n", s.dbMin, s.dbMax);
   if (signal_light::mode() != signal_light::Mode::Off) signal_light::flashAck();
+  group_sync::publishSettings();
 }
 
 void apply(const KeyMapping& key) {
   switch (key.action) {
     case Action::SetColor:
       signal_light::setManualColor(key.color);
+      // A key press is a local event, so it goes to the group. This is what
+      // makes one remote drive every unit in the room.
+      group_sync::publishMode();
       break;
 
     case Action::PowerOn:
       signal_light::setMode(signal_light::Mode::Auto);
+      group_sync::publishMode();
       break;
 
     case Action::PowerOff:
       signal_light::setMode(signal_light::Mode::Off);
+      group_sync::publishMode();
       break;
 
     case Action::BrightnessUp:
@@ -142,6 +149,7 @@ void apply(const KeyMapping& key) {
           (key.action == Action::BrightnessUp) ? LED_BRIGHTNESS_STEP : -LED_BRIGHTNESS_STEP;
       settings::adjustBrightness(delta);
       signal_light::setBrightness(settings::get().brightness);
+      group_sync::publishSettings();
       break;
     }
 

@@ -2,6 +2,9 @@
 
 #include <Adafruit_SSD1306.h>
 #include <Arduino.h>
+#include <WiFi.h>
+#include <esp_now.h>
+#include <esp_wifi.h>
 #include <FastLED.h>
 #include <IRrecv.h>
 #include <IRutils.h>
@@ -15,6 +18,7 @@
 SerialStub Serial;
 CFastLED FastLED;
 TwoWire Wire;
+WiFiClass WiFi;
 
 namespace {
 
@@ -38,6 +42,13 @@ std::map<uint8_t,int> panelCommands;
 std::map<uint8_t,uint8_t> panelValues;
 uint8_t pendingCommand = 0;  // command still awaiting its parameter byte
 
+esp_now_recv_cb_t recvCb = nullptr;
+int packetsSent = 0;
+uint8_t lastPacket[64];
+int lastPacketLen = 0;
+uint8_t radioChannel = 1;
+int wifiMode = WIFI_MODE_STA;
+
 }  // namespace
 
 namespace fakes {
@@ -58,6 +69,11 @@ void reset() {
   panelCommands.clear();
   panelValues.clear();
   pendingCommand = 0;
+  recvCb = nullptr;
+  packetsSent = 0;
+  lastPacketLen = 0;
+  radioChannel = 1;
+  wifiMode = WIFI_MODE_STA;
 }
 
 void advanceMillis(uint32_t ms) { nowMs += ms; }
@@ -74,6 +90,15 @@ uint32_t storedUInt(const char* key, uint32_t fallback) {
 }
 
 void receiveIr(uint64_t code) { irQueue.push_back(code); }
+
+int groupPacketsSent() { return packetsSent; }
+int groupPacketLength() { return lastPacketLen; }
+const uint8_t* groupPacket() { return lastPacket; }
+void deliverGroupPacket(const uint8_t* mac, const uint8_t* data, int len) {
+  if (recvCb) recvCb(mac, data, len);
+}
+void setChannel(uint8_t channel) { radioChannel = channel; }
+void setWifiMode(int mode) { wifiMode = mode; }
 
 void setPanelPresent(bool present) { panelPresent = present; }
 int displayFrames() { return frames; }
@@ -197,3 +222,30 @@ void Adafruit_SSD1306::drawRect(int16_t, int16_t, int16_t, int16_t, uint16_t) {}
 void Adafruit_SSD1306::fillRect(int16_t, int16_t, int16_t, int16_t, uint16_t) {}
 void Adafruit_SSD1306::drawFastVLine(int16_t, int16_t, int16_t, uint16_t) {}
 void Adafruit_SSD1306::drawFastHLine(int16_t, int16_t, int16_t, uint16_t) {}
+
+// --- WiFi / ESP-NOW ---
+
+int WiFiClass::getMode() { return wifiMode; }
+
+esp_err_t esp_wifi_get_channel(uint8_t* primary, wifi_second_chan_t* second) {
+  if (primary) *primary = radioChannel;
+  if (second) *second = 0;
+  return ESP_OK;
+}
+
+esp_err_t esp_now_init() { return ESP_OK; }
+esp_err_t esp_now_deinit() {
+  recvCb = nullptr;
+  return ESP_OK;
+}
+esp_err_t esp_now_register_recv_cb(esp_now_recv_cb_t cb) {
+  recvCb = cb;
+  return ESP_OK;
+}
+esp_err_t esp_now_add_peer(const esp_now_peer_info_t*) { return ESP_OK; }
+esp_err_t esp_now_send(const uint8_t*, const uint8_t* data, size_t len) {
+  packetsSent++;
+  lastPacketLen = int(len < sizeof(lastPacket) ? len : sizeof(lastPacket));
+  memcpy(lastPacket, data, size_t(lastPacketLen));
+  return ESP_OK;
+}

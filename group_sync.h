@@ -58,7 +58,24 @@ void publishLevel(float leqDb);
 // special-case a lone unit.
 float groupLevel(float ownDb, uint8_t combine);
 
-// Call from loop(). Ages out peers that have gone quiet.
+// Relays a locally-originated change to the group. Each is a no-op while a
+// received message is being applied, so a change can never echo back and
+// forth between units.
+//
+// Thresholds and LED brightness are shared because they describe the room.
+// Zone masks, group name, screen brightness and the inactive level are not:
+// they describe an individual unit's place in the arrangement, and copying
+// them would collapse a stack into three identical lights.
+void publishSettings();
+void publishMode();
+void publishSelfTest();
+
+// Call from loop(). Ages out peers that have gone quiet, and applies anything
+// received since the last call.
+//
+// Messages are applied here rather than in the radio callback, which runs on
+// the WiFi task: settings and LED state are not safe to touch from two
+// threads, and NVS writes least of all.
 void tick();
 
 #else
@@ -69,6 +86,9 @@ inline uint8_t channel() { return 0; }
 inline uint8_t peerCount() { return 0; }
 inline uint32_t lastHeardMs() { return 0; }
 inline void publishLevel(float) {}
+inline void publishSettings() {}
+inline void publishMode() {}
+inline void publishSelfTest() {}
 inline float groupLevel(float ownDb, uint8_t) { return ownDb; }
 inline void tick() {}
 

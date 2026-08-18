@@ -60,6 +60,14 @@ BaseType_t xTaskCreate(void (*fn)(void*), const char* name, uint32_t stack, void
                        UBaseType_t priority, void* handle);
 TickType_t xTaskGetTickCount();
 
+// FreeRTOS critical sections are no-ops here: the tests are single threaded,
+// and the point of the locking in the firmware is the WiFi task, which does
+// not exist on the host.
+typedef int portMUX_TYPE;
+#define portMUX_INITIALIZER_UNLOCKED 0
+#define portENTER_CRITICAL(mux) ((void)0)
+#define portEXIT_CRITICAL(mux) ((void)0)
+
 typedef int esp_err_t;
 #define ESP_OK 0
 #define ESP_INTR_FLAG_LEVEL1 (1 << 1)
