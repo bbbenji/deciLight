@@ -39,6 +39,10 @@ Frame shown = {};
 bool dirty = false;
 uint32_t lastDrawMs = 0;
 
+// Non-zero while the splash screen is being held. Measurements stage frames
+// underneath it as normal; they just are not sent until it expires.
+uint32_t splashUntilMs = 0;
+
 // Bar geometry. The scale spans the same range the thresholds are allowed to
 // take, so a marker can never sit off the end of it.
 constexpr int16_t BAR_X = 0;
@@ -51,6 +55,16 @@ int16_t xForDb(float db) {
   const float t = (db - float(DB_LIMIT_LOW)) / span;
   const int16_t x = int16_t(t * (BAR_W - 1) + 0.5f);
   return x < 0 ? 0 : (x > BAR_W - 1 ? BAR_W - 1 : x);
+}
+
+// The built-in font advances 6px per character at size 1, and scales with it.
+void printCentred(const char* text, uint8_t size, int16_t y) {
+  const int16_t width = int16_t(strlen(text)) * 6 * size;
+  int16_t x = (DISPLAY_WIDTH - width) / 2;
+  if (x < 0) x = 0;
+  panel.setTextSize(size);
+  panel.setCursor(x, y);
+  panel.print(text);
 }
 
 const char* modeText(signal_light::Mode mode) {
@@ -124,6 +138,17 @@ void draw(const Frame& frame) {
 }  // namespace
 
 bool begin() {
+  // Establish a known state rather than relying on static initialisation, so
+  // begin() is a real reset point and a second call cannot inherit a panel
+  // that is no longer there.
+  fitted = false;
+  staged = Frame{};
+  shown = Frame{};
+  dirty = false;
+  lastDrawMs = 0;
+  splashUntilMs = 0;
+  status[0] = '\0';
+
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
 
   for (uint8_t address : DISPLAY_ADDRESSES) {
@@ -144,6 +169,20 @@ bool begin() {
 }
 
 bool present() { return fitted; }
+
+void splash() {
+  if (!fitted) return;
+
+  panel.clearDisplay();
+  panel.setTextColor(SSD1306_WHITE);
+  printCentred(PRODUCT_NAME, 2, 18);
+  printCentred(FIRMWARE_VERSION, 1, 42);
+  panel.display();
+
+  splashUntilMs = millis() + DISPLAY_SPLASH_MS;
+  if (splashUntilMs == 0) splashUntilMs = 1;  // 0 is the "not showing" marker
+  lastDrawMs = millis();
+}
 
 void setStatus(const char* text) {
   strncpy(status, text ? text : "", sizeof(status) - 1);
@@ -170,6 +209,13 @@ void update(float leqDb, sound_level::Quality quality, const Settings& settings,
 
 void tick() {
   if (!fitted || !dirty) return;
+
+  // Signed comparison, so this survives the millis() rollover.
+  if (splashUntilMs != 0) {
+    if (int32_t(millis() - splashUntilMs) < 0) return;
+    splashUntilMs = 0;
+  }
+
   if (staged == shown) {
     dirty = false;
     return;

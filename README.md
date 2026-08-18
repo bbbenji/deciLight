@@ -109,7 +109,8 @@ Behind the page is a small HTTP API, if you would rather script it:
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /api/state` | Level, quality, mode, zone, thresholds, brightness and network status, as JSON |
+| `GET /api/state` | Level, quality, mode, zone, thresholds, brightness, network status and firmware version, as JSON |
+| `GET /api/version` | Just the product name and firmware version. Separate from `/api/state` so checking what a unit is running does not require pulling a live measurement - which is the question worth asking right after an over-the-air update |
 | `POST /api/set` | `dbMin`, `dbMax`, `brightness` - any subset |
 | `POST /api/mode` | `mode=auto`, `mode=off`, or `mode=manual&color=RRGGBB` |
 | `POST /api/wifi` | `ssid`, `pass` - saved to flash, then the unit restarts |
@@ -187,7 +188,7 @@ By default it sweeps the level across the whole range every 40 seconds, so every
 
 #### Status screen
 
-An SSD1306 128x64 OLED on the I2C pins shows the current level, the threshold window, the operating mode and the unit's address. Wiring is in [docs/wiring.md](docs/wiring.md).
+An SSD1306 128x64 OLED on the I2C pins shows the current level, the threshold window, the operating mode and the unit's address. At boot it shows the product name and firmware version for a couple of seconds first, which is the quickest way to tell what is actually running on a unit after an over-the-air update. Wiring is in [docs/wiring.md](docs/wiring.md).
 
 It is genuinely optional. The panel is probed at both of its usual I2C addresses during boot, and if nothing answers every display call becomes a no-op, so the same firmware serves units built with and without a screen. Set `FEATURE_DISPLAY` to 0 to leave the code out entirely and save about 29KB.
 
@@ -211,6 +212,8 @@ Almost everything worth changing is a named constant in `config.h`:
 | `MIC_EQUALIZER`, `MIC_WEIGHTING` | Which filters to apply. Set the weighting to `C_weighting` or `None`, and update `DB_UNITS` to match |
 | `FEATURE_WIFI` | Build with or without networking and the web interface |
 | `FEATURE_DISPLAY` | Build with or without the OLED status screen |
+| `FIRMWARE_VERSION`, `PRODUCT_NAME` | Shown on the splash screen and logged at boot |
+| `DISPLAY_SPLASH_MS` | How long the splash is held before measurements take the screen |
 | `DISPLAY_ADDRESSES`, `DISPLAY_MIN_INTERVAL_MS` | Which I2C addresses to probe, and the floor on redraw rate |
 | `WIFI_AP_SSID`, `WIFI_AP_PASSWORD` | The fallback access point |
 | `WIFI_HOSTNAME` | Also the mDNS name, so `decilight.local` follows it |

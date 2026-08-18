@@ -169,6 +169,17 @@ that is the reason, and a level shifter fixes it.
 
 ## What the display shows
 
+At boot, for a couple of seconds:
+
+    ┌────────────────────────────────┐
+    │                                │
+    │        deciLight               │
+    │          1.0.0                 │
+    │                                │
+    └────────────────────────────────┘
+
+then, once measurements start:
+
     ┌────────────────────────────────┐
     │ AUTO                192.168.4.1│
     │                                │

@@ -136,7 +136,49 @@ void test_display() {
   show(29.0f, s, signal_light::Mode::Auto, sound_level::Quality::BelowNoiseFloor);
   CHECK(drew("QUIET"), "noise floor not shown in '%s'", fakes::displayText());
 
+  CASE("the splash carries the product name and firmware version");
+  fakes::reset();
+  fakes::setPanelPresent(true);
+  display::begin();
+  const int beforeSplash = fakes::displayFrames();
+  display::splash();
+  CHECK(fakes::displayFrames() == beforeSplash + 1, "the splash was not drawn");
+  CHECK(drew(PRODUCT_NAME), "product name missing from '%s'", fakes::displayText());
+  CHECK(drew(FIRMWARE_VERSION), "version missing from '%s'", fakes::displayText());
+
+  // A measurement arrives within milliseconds of boot, and without a hold it
+  // would wipe the splash before anyone could read it.
+  CASE("measurements do not wipe the splash while it is held");
+  int splashFrames = fakes::displayFrames();
+  for (uint32_t elapsed = 100; elapsed < DISPLAY_SPLASH_MS; elapsed += 100) {
+    fakes::advanceMillis(100);
+    show(55.0f + (elapsed / 100), s);
+  }
+  CHECK(fakes::displayFrames() == splashFrames, "%d frame(s) drew over the splash",
+        fakes::displayFrames() - splashFrames);
+  CHECK(drew(PRODUCT_NAME), "the splash was overwritten: '%s'", fakes::displayText());
+
+  CASE("the screen is handed over once the splash has been held");
+  fakes::advanceMillis(DISPLAY_SPLASH_MS);
+  show(55.0f, s);
+  CHECK(fakes::displayFrames() == splashFrames + 1, "expected one frame, got %d",
+        fakes::displayFrames() - splashFrames);
+  CHECK(!drew(PRODUCT_NAME), "still showing the splash: '%s'", fakes::displayText());
+  CHECK(drew("55"), "level missing after the splash: '%s'", fakes::displayText());
+
+  CASE("splash on a unit with no panel does nothing");
+  fakes::reset();
+  fakes::setPanelPresent(false);
+  display::begin();
+  display::splash();
+  CHECK(fakes::displayFrames() == 0, "drew a splash with no panel");
+
   CASE("the status line is shown and can be changed");
+  fakes::reset();
+  fakes::setPanelPresent(true);
+  display::begin();
+  waitOutInterval();
+  fakes::advanceMillis(DISPLAY_SPLASH_MS);
   display::setStatus("192.168.4.1");
   waitOutInterval();
   show(50.0f, s);

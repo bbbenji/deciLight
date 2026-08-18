@@ -183,9 +183,9 @@ function render(s){
   if(dragging!="sbri") $("sbri").value=s.brightness;
   paint();
   $("otacard").hidden=!s.ota;
-  $("net").textContent=s.net=="ap"
-    ? "Access point "+s.ssid+" \u00b7 "+s.ip
-    : "Connected to "+s.ssid+" \u00b7 "+s.ip;
+  $("net").textContent=s.name+" "+s.version+" \u00b7 "+(s.net=="ap"
+    ? "Access point "+s.ssid
+    : "Connected to "+s.ssid)+" \u00b7 "+s.ip;
 }
 
 $("otago").onclick=function(){

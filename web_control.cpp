@@ -77,8 +77,10 @@ void sendState() {
            static_cast<unsigned long>(signal_light::manualColor() & 0xFFFFFF));
 
   String out;
-  out.reserve(256);
-  out += "{\"db\":";       out += String(latest.leqDb, 1);
+  out.reserve(320);
+  out += "{\"name\":\"" PRODUCT_NAME_JSON "\"";
+  out += ",\"version\":\"" FIRMWARE_VERSION_JSON "\"";
+  out += ",\"db\":";      out += String(latest.leqDb, 1);
   out += ",\"units\":\"" DB_UNITS "\"";
   out += ",\"quality\":\""; out += qualityName(latest.quality);
   out += "\",\"mode\":\"";  out += modeName(signal_light::mode());
@@ -101,6 +103,14 @@ void sendState() {
 }
 
 void handleRoot() { server.send_P(200, "text/html", WEB_PAGE); }
+
+// Deliberately separate from /api/state: answering "what is running on that
+// unit" should not require pulling a live measurement, and after an
+// over-the-air update this is the thing worth checking.
+void sendVersion() {
+  server.send(200, "application/json",
+              "{\"name\":\"" PRODUCT_NAME_JSON "\",\"version\":\"" FIRMWARE_VERSION_JSON "\"}");
+}
 
 // Thresholds and brightness. Every value is clamped by the settings module,
 // so a malformed or hostile request cannot produce an unusable device.
@@ -199,6 +209,7 @@ bool begin() {
 
   server.on("/", HTTP_GET, handleRoot);
   server.on("/api/state", HTTP_GET, sendState);
+  server.on("/api/version", HTTP_GET, sendVersion);
   server.on("/api/set", HTTP_POST, handleSet);
   server.on("/api/mode", HTTP_POST, handleMode);
   server.on("/api/wifi", HTTP_POST, handleWifi);

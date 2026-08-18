@@ -28,6 +28,18 @@ constexpr uint8_t PIN_I2C_SCL = 22; // OLED SCL
 // -----------------------------------------------------------------------------
 constexpr uint32_t SERIAL_BAUD = 115200;
 
+// Shown on the splash screen at boot and printed to the serial console.
+// Bump it when you flash something you want to be able to identify later -
+// with OTA in the picture, "which build is actually on that unit" stops being
+// a rhetorical question.
+#define FIRMWARE_VERSION_JSON "1.0.0"
+constexpr char FIRMWARE_VERSION[] = FIRMWARE_VERSION_JSON;
+
+// The name on the splash screen. Lower-case "d" to match how the project
+// spells itself everywhere else.
+#define PRODUCT_NAME_JSON "deciLight"
+constexpr char PRODUCT_NAME[] = PRODUCT_NAME_JSON;
+
 // The ESP32 runs this workload comfortably at 80MHz, which keeps the board
 // cool and cuts power draw. FastLED drives the NeoPixels over RMT (clocked
 // from the fixed 80MHz APB, not the CPU) and I2S uses the APLL, so neither
@@ -88,6 +100,12 @@ constexpr uint8_t DISPLAY_ADDRESSES[] = {0x3C, 0x3D};
 // which loop() is blocked. The frame is only sent when something visible has
 // actually changed, and never more often than this.
 constexpr uint32_t DISPLAY_MIN_INTERVAL_MS = 250;
+
+// How long the splash screen is held before measurements take the screen
+// over. Nothing waits on this - the rest of setup() carries on underneath,
+// and on a unit joining a stored WiFi network the splash is usually still up
+// well past this anyway.
+constexpr uint32_t DISPLAY_SPLASH_MS = 2000;
 
 // -----------------------------------------------------------------------------
 // Thresholds

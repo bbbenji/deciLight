@@ -31,6 +31,11 @@ bool begin();
 
 bool present();
 
+// Draws the product name and firmware version, and holds them for
+// DISPLAY_SPLASH_MS before measurements are allowed to take the screen. Does
+// not block: the caller carries on immediately.
+void splash();
+
 // One line of context for the top right - an IP address, or a short note when
 // there is no network. Copied, so the caller need not keep the string alive.
 void setStatus(const char* text);
@@ -48,6 +53,7 @@ void tick();
 
 inline bool begin() { return false; }
 inline bool present() { return false; }
+inline void splash() {}
 inline void setStatus(const char*) {}
 inline void update(float, sound_level::Quality, const Settings&, signal_light::Mode,
                    signal_light::Zone) {}

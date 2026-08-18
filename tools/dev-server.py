@@ -43,6 +43,12 @@ def load_config() -> dict:
         r"constexpr\s+\w+\s+(\w+)\s*=\s*(0x[0-9A-Fa-f]+|-?[\d.]+)f?\s*;", src
     ):
         cfg[name] = int(value, 16) if value.startswith("0x") else float(value)
+    for name, value in re.findall(r'constexpr\s+char\s+(\w+)\[\]\s*=\s*"([^"]*)"\s*;', src):
+        cfg[name] = value
+    # Some string constants are defined via the preprocessor so they can be
+    # pasted into JSON literals; pick those up too.
+    for name, value in re.findall(r'#define\s+(\w+)\s+"([^"]*)"', src):
+        cfg.setdefault(name.replace("_JSON", ""), value)
     units = re.search(r'#define\s+DB_UNITS\s+"([^"]+)"', src)
     cfg["DB_UNITS"] = units.group(1) if units else "dBA"
     return cfg
@@ -113,6 +119,8 @@ class Device:
     def state(self):
         db, quality = self.sample()
         return {
+            "name": CFG.get("PRODUCT_NAME", "deciLight"),
+            "version": CFG.get("FIRMWARE_VERSION", "0.0.0"),
             "db": round(db, 1),
             "units": CFG["DB_UNITS"],
             "quality": quality,
@@ -170,6 +178,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/api/state"):
             self._send(200, json.dumps(self.device.state()))
+        elif self.path.startswith("/api/version"):
+            self._send(200, json.dumps({
+                "name": CFG.get("PRODUCT_NAME", "deciLight"),
+                "version": CFG.get("FIRMWARE_VERSION", "0.0.0"),
+            }))
         else:
             # Anything else serves the page, matching the firmware's catch-all.
             self._send(200, PAGE, "text/html")
@@ -240,6 +253,7 @@ def main():
     Handler.device = Device(opts.level)
     print(f"deciLight dev server on http://{opts.host}:{opts.port}/")
     print(f"  page:       {len(PAGE)} bytes from web_page.h")
+    print(f"  firmware:   {CFG.get('PRODUCT_NAME')} {CFG.get('FIRMWARE_VERSION')}")
     print(f"  thresholds: {int(CFG['DB_MIN_DEFAULT'])} / {int(CFG['DB_MAX_DEFAULT'])} {CFG['DB_UNITS']}")
     print("  level:      " + (f"fixed at {opts.level}" if opts.level else "sweeping 28-96 over 40s"))
     try:

@@ -69,6 +69,7 @@ void setup() {
   remote_control::begin();
 
   display::begin();
+  display::splash();
 
   micReady = sound_level::begin();
   if (!micReady) {
@@ -85,7 +86,8 @@ void setup() {
   }
 
   const Settings& s = settings::get();
-  Serial.printf("deciLight ready, thresholds %u - %u " DB_UNITS "\n", s.dbMin, s.dbMax);
+  Serial.printf("%s %s ready, thresholds %u - %u " DB_UNITS "\n", PRODUCT_NAME,
+                FIRMWARE_VERSION, s.dbMin, s.dbMax);
 }
 
 void loop() {
