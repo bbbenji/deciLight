@@ -19,10 +19,22 @@ enum class Mode : uint8_t {
   Off,     // LEDs dark, measurement continues
 };
 
+// Which band of the threshold window the level is in. Tracked separately from
+// the colour so hysteresis has something to hold on to.
+enum class Zone : uint8_t { Unknown, Quiet, Warn, Loud };
+
 void begin(uint8_t brightness);
 
 Mode mode();
 void setMode(Mode next);
+
+// Current zone, and the colour being held in Manual mode. For status displays.
+Zone zone();
+uint32_t manualColor();
+
+// Smoothed level behind the current zone, or NAN before the first
+// measurement settles.
+float smoothedLevel();
 
 // Switches to Manual and holds the given 0xRRGGBB colour.
 void setManualColor(uint32_t rgb);

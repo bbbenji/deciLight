@@ -1,0 +1,20 @@
+# deciLight partition table
+#
+# The FireBeetle-ESP32 board definition hardcodes the stock "default" layout,
+# which allows a 1.31MB application - not enough once the WiFi stack is linked
+# in. This is the standard "min_spiffs" layout: two 1.9MB OTA slots, a small
+# filesystem, and room for a core dump.
+#
+# The nvs partition keeps the stock offset and size, so thresholds and
+# brightness saved by an earlier build survive the change.
+#
+# Placing this file in the sketch folder overrides the board default for the
+# Arduino IDE, arduino-cli and the VS Code extension alike.
+#
+# Name,     Type, SubType,  Offset,   Size,     Flags
+nvs,        data, nvs,      0x9000,   0x5000,
+otadata,    data, ota,      0xe000,   0x2000,
+app0,       app,  ota_0,    0x10000,  0x1E0000,
+app1,       app,  ota_1,    0x1F0000, 0x1E0000,
+spiffs,     data, spiffs,   0x3D0000, 0x20000,
+coredump,   data, coredump, 0x3F0000, 0x10000,

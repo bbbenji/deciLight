@@ -23,11 +23,26 @@ void begin();
 
 const Settings& get();
 
-// All setters clamp to the limits in config.h and keep dbMin + DB_MIN_SPAN
-// <= dbMax, so the remote can never wrap a value or close the window.
+// Absolute setters. All of them clamp to the limits in config.h and keep
+// dbMin + DB_MIN_SPAN <= dbMax, so no caller - remote, web or otherwise - can
+// wrap a value or close the window.
+void setDbMin(int value);
+void setDbMax(int value);
+void setBrightness(int value);
+
+// Relative equivalents, for the remote's step keys.
 void adjustDbMin(int delta);
 void adjustDbMax(int delta);
 void adjustBrightness(int delta);
+
+// WiFi station credentials. An empty SSID means "no network configured", in
+// which case the firmware brings up its own access point instead.
+const char* wifiSsid();
+const char* wifiPassword();
+
+// Written to NVS immediately rather than lazily - the caller is expected to
+// restart so the new credentials take effect.
+void setWifiCredentials(const char* ssid, const char* password);
 
 // Call from loop(). Writes pending changes once they have settled.
 void tick();

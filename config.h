@@ -29,7 +29,8 @@ constexpr uint32_t SERIAL_BAUD = 115200;
 // The ESP32 runs this workload comfortably at 80MHz, which keeps the board
 // cool and cuts power draw. FastLED drives the NeoPixels over RMT (clocked
 // from the fixed 80MHz APB, not the CPU) and I2S uses the APLL, so neither
-// is affected by the lower core clock.
+// is affected by the lower core clock. 80MHz is also the floor for the WiFi
+// radio, so do not go below it with FEATURE_WIFI enabled.
 constexpr uint32_t CPU_FREQ_MHZ = 80;
 
 // Let the 5V rail settle before pulling current through the LEDs.
@@ -107,6 +108,35 @@ constexpr int    MIC_BITS        = 24;      // valid bits in the I2S frame
 
 // Sine-wave RMS vs. dBFS. Nudge this to calibrate against a reference meter.
 constexpr double MIC_OFFSET_DB = 3.0103;
+
+// -----------------------------------------------------------------------------
+// WiFi control
+//
+// Set to 0 to build without networking. That saves roughly 700KB of flash and
+// 45KB of RAM, and removes the WiFi radio's power draw, at the cost of the
+// web interface.
+//
+// On boot the firmware joins the network stored in NVS, if there is one, and
+// otherwise brings up its own access point. A classroom unit that moves
+// between rooms can therefore be controlled with no network at all: join the
+// deciLight access point from a phone and open http://192.168.4.1/.
+// -----------------------------------------------------------------------------
+#define FEATURE_WIFI 1
+
+// Also the mDNS name, so the unit answers to http://decilight.local/ on
+// networks whose clients support it.
+constexpr char WIFI_HOSTNAME[] = "decilight";
+
+// Fallback access point. The password must be at least 8 characters, or empty
+// for an open network.
+constexpr char WIFI_AP_SSID[]     = "deciLight";
+constexpr char WIFI_AP_PASSWORD[] = "decilight";
+
+// How long to wait for the stored network before giving up and starting the
+// access point instead.
+constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 15000;
+
+constexpr uint16_t WEB_SERVER_PORT = 80;
 
 // -----------------------------------------------------------------------------
 // Sampling

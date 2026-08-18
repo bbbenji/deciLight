@@ -33,6 +33,8 @@
  *   sound_level.*     I2S sampling, IIR filtering, Leq in dB
  *   signal_light.*    LED state, colour mapping, smoothing and hysteresis
  *   remote_control.*  IR key map and what each key does
+ *   web_control.*     WiFi bring-up and the HTTP control interface
+ *   web_page.h        the page served to the browser
  *   sos-iir-filter.h  filter kernel, upstream, do not include twice
  *
  * This file only wires them together.
@@ -43,6 +45,7 @@
 #include "settings.h"
 #include "signal_light.h"
 #include "sound_level.h"
+#include "web_control.h"
 
 // True once the microphone is running. When it is not, the remote still works
 // so the light can be used as a plain lamp.
@@ -69,12 +72,17 @@ void setup() {
     signal_light::setMode(signal_light::Mode::Off);
   }
 
+  // Networking comes up last: it is the slowest step and the only optional
+  // one, so everything else is already serving the room while it connects.
+  web_control::begin();
+
   const Settings& s = settings::get();
   Serial.printf("deciLight ready, thresholds %u - %u " DB_UNITS "\n", s.dbMin, s.dbMax);
 }
 
 void loop() {
   remote_control::poll();
+  web_control::tick();
   signal_light::tick();
   settings::tick();
 
@@ -94,6 +102,8 @@ void loop() {
                   : reading.quality == sound_level::Quality::BelowNoiseFloor ? " (below noise floor)"
                                                                             : "");
   }
+
+  web_control::publishLevel(reading);
 
   const Settings& s = settings::get();
   signal_light::updateLevel(reading.leqDb, s.dbMin, s.dbMax);

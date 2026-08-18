@@ -14,11 +14,18 @@ constexpr char kNamespace[]  = "traffic";
 constexpr char kKeyDbMin[]   = "dB_min";
 constexpr char kKeyDbMax[]   = "dB_max";
 constexpr char kKeyBright[]  = "bright";
+constexpr char kKeySsid[]    = "wifi_ssid";
+constexpr char kKeyPass[]    = "wifi_pass";
 
 // Quiet period after the last change before anything is written to flash.
 constexpr uint32_t kFlushDelayMs = 3000;
 
 Preferences prefs;
+
+// Sized to the 802.11 maxima: 32-character SSID, 63-character WPA2 passphrase.
+char wifiSsidBuf[33] = {0};
+char wifiPassBuf[64] = {0};
+
 Settings current;
 Settings stored;
 bool dirty = false;
@@ -58,33 +65,49 @@ void begin() {
     current.dbMin = clampInt(current.dbMax - DB_MIN_SPAN, DB_LIMIT_LOW, DB_LIMIT_HIGH);
   }
 
+  prefs.getString(kKeySsid, wifiSsidBuf, sizeof(wifiSsidBuf));
+  prefs.getString(kKeyPass, wifiPassBuf, sizeof(wifiPassBuf));
+
   stored = current;
 }
 
 const Settings& get() { return current; }
 
-void adjustDbMin(int delta) {
-  const int upper = current.dbMax - DB_MIN_SPAN;
-  const uint8_t next = clampInt(current.dbMin + delta, DB_LIMIT_LOW, upper);
+void setDbMin(int value) {
+  const uint8_t next = clampInt(value, DB_LIMIT_LOW, current.dbMax - DB_MIN_SPAN);
   if (next == current.dbMin) return;
   current.dbMin = next;
   markDirty();
 }
 
-void adjustDbMax(int delta) {
-  const int lower = current.dbMin + DB_MIN_SPAN;
-  const uint8_t next = clampInt(current.dbMax + delta, lower, DB_LIMIT_HIGH);
+void setDbMax(int value) {
+  const uint8_t next = clampInt(value, current.dbMin + DB_MIN_SPAN, DB_LIMIT_HIGH);
   if (next == current.dbMax) return;
   current.dbMax = next;
   markDirty();
 }
 
-void adjustBrightness(int delta) {
-  const uint8_t next =
-      clampInt(current.brightness + delta, LED_BRIGHTNESS_MIN, LED_BRIGHTNESS_MAX);
+void setBrightness(int value) {
+  const uint8_t next = clampInt(value, LED_BRIGHTNESS_MIN, LED_BRIGHTNESS_MAX);
   if (next == current.brightness) return;
   current.brightness = next;
   markDirty();
+}
+
+void adjustDbMin(int delta) { setDbMin(current.dbMin + delta); }
+void adjustDbMax(int delta) { setDbMax(current.dbMax + delta); }
+void adjustBrightness(int delta) { setBrightness(current.brightness + delta); }
+
+const char* wifiSsid() { return wifiSsidBuf; }
+const char* wifiPassword() { return wifiPassBuf; }
+
+void setWifiCredentials(const char* ssid, const char* password) {
+  strncpy(wifiSsidBuf, ssid, sizeof(wifiSsidBuf) - 1);
+  wifiSsidBuf[sizeof(wifiSsidBuf) - 1] = 0;
+  strncpy(wifiPassBuf, password, sizeof(wifiPassBuf) - 1);
+  wifiPassBuf[sizeof(wifiPassBuf) - 1] = 0;
+  prefs.putString(kKeySsid, wifiSsidBuf);
+  prefs.putString(kKeyPass, wifiPassBuf);
 }
 
 void tick() {

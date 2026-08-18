@@ -29,7 +29,6 @@ Beyond its utility as a noise monitor, deciLight's color-changing feature can be
 
 - **Networked Synchronization:** The ability to pair multiple deciLights (ESP-NOW?), creating a cohesive and synchronized lighting experience across multiple units.
 - **External Display:** Show operational modes and noise thresholds in real-time.
-- **WiFi/Bluetooth control:** Adjust settings and modes via a mobile device.
 - **Multi-device control:** Control multiple deciLights via single IR remote.
 
 ### Assembly & Printing Tips:
@@ -65,6 +64,9 @@ The sketch is split by responsibility, so that adding a feature usually means to
 | `sound_level.{h,cpp}` | I2S sampling task, IIR filtering, Leq in dB |
 | `signal_light.{h,cpp}` | LED state, colour mapping, smoothing and hysteresis |
 | `remote_control.{h,cpp}` | IR key map and what each key does |
+| `web_control.{h,cpp}` | WiFi bring-up and the HTTP control interface |
+| `web_page.h` | The control page, served from flash |
+| `partitions.csv` | Flash layout. Overrides the board default, which is too small once WiFi is linked in |
 | `sos-iir-filter.h` | Second-Order Sections filter kernel, with a hand-written Xtensa assembly inner loop. Upstream code from [esp32-i2s-slm](https://github.com/ikostoski/esp32-i2s-slm), unmodified |
 | `math/*.m` | GNU Octave scripts that generate the equaliser coefficients for each supported microphone |
 
@@ -81,6 +83,35 @@ The split matters because the FPU-heavy filtering can then be scheduled independ
 
 Colour is chosen with hysteresis rather than a bare comparison, so a room sitting exactly on a threshold does not strobe between two colours. `DB_SMOOTHING` sets how quickly the light reacts, `DB_HYSTERESIS` sets how far past a threshold the level must travel before the colour changes.
 
+#### Mobile control
+
+Every unit brings up a web interface that mirrors what the IR remote can do, plus a live level readout. There is no app to install and no internet connection required.
+
+On boot the firmware joins the WiFi network stored in its settings. If none is configured, or it cannot connect within 15 seconds, it starts its own access point instead:
+
+- **Network name:** `deciLight`
+- **Password:** `decilight`
+- **Address:** [http://192.168.4.1/](http://192.168.4.1/)
+
+That fallback is the point: a unit carried between classrooms works with no infrastructure at all. Join its access point from a phone and open the page. Once joined to a real network the unit also answers to [http://decilight.local/](http://decilight.local/) on clients that support mDNS, and prints its address to the serial console at boot either way.
+
+The page shows the current level against a coloured scale, and offers sliders for both thresholds and brightness, buttons for automatic and off, and a palette of fixed colours. Changes apply immediately and are shared with the remote - either control surface can adjust the same settings, and neither overrides the other. Network credentials can be entered from the page, after which the unit restarts to join.
+
+Behind the page is a small HTTP API, if you would rather script it:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/state` | Level, quality, mode, zone, thresholds, brightness and network status, as JSON |
+| `POST /api/set` | `dbMin`, `dbMax`, `brightness` - any subset |
+| `POST /api/mode` | `mode=auto`, `mode=off`, or `mode=manual&color=RRGGBB` |
+| `POST /api/wifi` | `ssid`, `pass` - saved to flash, then the unit restarts |
+
+Every value is clamped by the same code that guards the remote, so no request can produce an unusable device.
+
+There is no authentication. Anything that can reach the unit can change its settings, which is the right trade for a classroom light on a local network, but do not expose it to the internet.
+
+Set `FEATURE_WIFI` to 0 in `config.h` to build without any of this. That saves about 500KB of flash and 23KB of RAM, and the result fits the stock partition layout.
+
 #### Building
 
 Requires the ESP32 core and two libraries. Verified against ESP32 core 2.0.5, FastLED 3.10.5 and IRremoteESP8266 2.9.0.
@@ -94,11 +125,16 @@ arduino-cli core install esp32:esp32@2.0.5
 arduino-cli lib install FastLED
 arduino-cli lib install IRremoteESP8266
 
-arduino-cli compile --fqbn esp32:esp32:firebeetle32 .
+arduino-cli compile --fqbn esp32:esp32:firebeetle32 \
+  --build-property upload.maximum_size=1966080 .
 arduino-cli upload -p /dev/ttyUSB0 --fqbn esp32:esp32:firebeetle32 .
 ```
 
-A current build uses about 63% of program storage and 15% of dynamic memory, leaving plenty of room for the networking features on the roadmap.
+A current build uses about 68% of the application partition and 22% of dynamic memory.
+
+The `--build-property` above is needed because of the flash layout. With the WiFi stack linked in the firmware no longer fits the 1.31MB application slot that the FireBeetle board definition hardcodes, and that board exposes no partition menu to change it. `partitions.csv` in the sketch folder supplies the standard `min_spiffs` layout instead - two 1.9MB OTA slots, which also leaves room for over-the-air updates later. The board definition still advertises the old limit to the size check, hence the override. `.vscode/arduino.json` carries the same override as a `buildPreferences` entry for the VS Code extension. Building with `FEATURE_WIFI` set to 0 needs none of this.
+
+The `nvs` partition keeps its stock offset and size, so thresholds saved by an earlier build survive the change.
 
 The sketch also opens directly in the Arduino IDE, and `.vscode/` carries a working configuration for the VS Code Arduino extension. Note that the `.ino` filename has to match the folder name, which is why it is `deciLight.ino`.
 
@@ -118,6 +154,9 @@ Almost everything worth changing is a named constant in `config.h`:
 | `LED_PSU_VOLTS`, `LED_PSU_MILLIAMPS` | Power budget FastLED dims against, rather than browning out the regulator |
 | `MIC_*` | Microphone datasheet figures. `MIC_OFFSET_DB` is the linear calibration against a reference meter |
 | `MIC_EQUALIZER`, `MIC_WEIGHTING` | Which filters to apply. Set the weighting to `C_weighting` or `None`, and update `DB_UNITS` to match |
+| `FEATURE_WIFI` | Build with or without networking and the web interface |
+| `WIFI_AP_SSID`, `WIFI_AP_PASSWORD` | The fallback access point |
+| `WIFI_HOSTNAME` | Also the mDNS name, so `decilight.local` follows it |
 
 Fitting a different microphone means setting the `MIC_*` values from its datasheet and pointing `MIC_EQUALIZER` at the matching filter. Coefficients for the ICS-43432, ICS-43434, IM69D130 and SPH0645LM4H-B are derived in `math/`.
 

@@ -8,16 +8,12 @@
 namespace signal_light {
 namespace {
 
-// Which band of the threshold window the level currently sits in. Tracked
-// separately from the colour so hysteresis has something to hold on to.
-enum class Zone : uint8_t { Unknown, Quiet, Warn, Loud };
-
 CRGB leds[LED_COUNT];
 
 Mode currentMode = Mode::Auto;
 Zone currentZone = Zone::Unknown;
 
-uint32_t manualColor = COLOR_QUIET;
+uint32_t manualColor_ = COLOR_QUIET;
 
 // Running average of the measured level. NAN until the first measurement, so
 // the filter starts from a real reading rather than easing up from zero.
@@ -70,7 +66,7 @@ CRGB targetColor() {
   if (flashUntilMs != 0) return CRGB::Black;
   switch (currentMode) {
     case Mode::Off:    return CRGB::Black;
-    case Mode::Manual: return CRGB(manualColor);
+    case Mode::Manual: return CRGB(manualColor_);
     default:           return zoneColor(currentZone);
   }
 }
@@ -91,6 +87,9 @@ void begin(uint8_t brightness) {
 }
 
 Mode mode() { return currentMode; }
+Zone zone() { return currentZone; }
+uint32_t manualColor() { return manualColor_; }
+float smoothedLevel() { return smoothedDb; }
 
 void setMode(Mode next) {
   if (next == currentMode) return;
@@ -105,7 +104,7 @@ void setMode(Mode next) {
 }
 
 void setManualColor(uint32_t rgb) {
-  manualColor = rgb;
+  manualColor_ = rgb;
   currentMode = Mode::Manual;
   dirty = true;
 }

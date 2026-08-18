@@ -4,5 +4,11 @@
     "port": "/dev/ttyUSB0",
     "sketch": "deciLight.ino",
     "output": "../build",
-    "programmer": "esptool"
+    "programmer": "esptool",
+    "buildPreferences": [
+        [
+            "upload.maximum_size",
+            "1966080"
+        ]
+    ]
 }
