@@ -190,6 +190,10 @@ void resetPeriod() {
 }  // namespace
 
 bool begin() {
+  // Discard any half-accumulated measurement period, so begin() is a real
+  // reset point rather than inheriting whatever the last run left behind.
+  resetPeriod();
+
   blockQueue = xQueueCreate(8, sizeof(BlockSums));
   if (blockQueue == nullptr) {
     Serial.println(F("sound_level: could not allocate the block queue"));

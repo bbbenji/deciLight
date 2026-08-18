@@ -132,6 +132,20 @@ void test_settings() {
         settings::wifiSsid());
   CHECK(strcmp(settings::wifiPassword(), "hunter2") == 0, "password round-trip failed");
 
+  // getString does not touch the buffer when the key is missing, so without
+  // an explicit clear a unit that had credentials removed would keep serving
+  // the old ones.
+  CASE("begin() clears credentials that are no longer stored");
+  fakes::reset();
+  settings::begin();
+  settings::setWifiCredentials("old-network", "old-password");
+  CHECK(strlen(settings::wifiSsid()) > 0, "precondition failed: nothing was set");
+  fakes::reset();          // NVS now empty, as after a wipe
+  settings::begin();
+  CHECK(settings::wifiSsid()[0] == '\0', "stale ssid survived begin(): '%s'",
+        settings::wifiSsid());
+  CHECK(settings::wifiPassword()[0] == '\0', "stale password survived begin()");
+
   CASE("an over-long ssid is truncated rather than overflowing");
   fakes::reset();
   settings::begin();

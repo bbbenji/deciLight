@@ -254,6 +254,12 @@ bool startAccessPoint() {
 }  // namespace
 
 bool begin() {
+  // Establish a known state rather than relying on static initialisation, so
+  // begin() is a real reset point.
+  running = false;
+  addressText[0] = '\0';
+  latest = {0.0f, sound_level::Quality::BelowNoiseFloor};
+
   accessPointMode = !connectToStoredNetwork();
   if (accessPointMode && !startAccessPoint()) return false;
 

@@ -50,6 +50,12 @@ and the IR headers. `fakes.cpp` implements them over in-memory state, and
 `fakes.h` is the control surface tests use to move the clock, inspect the LED
 ring, count flash writes and feed in key presses.
 
+Where a stub can be either faithful or forgiving, it is faithful. `getString`
+returns 0 and leaves the caller's buffer untouched when a key is missing,
+exactly as the real Preferences does, because the friendlier behaviour would
+hide the class of bug where a caller assumes otherwise - which it did, until
+the stub was corrected.
+
 The stubs will drift from the real libraries over time. That is tolerable
 because they are not the thing that proves the firmware compiles - the ESP32
 build in CI is. If a stub goes out of date, the symptom is a host build failure,

@@ -173,13 +173,28 @@ void test_remote_control() {
 
   // Surfaced over the network so a receiver can be checked, and an unfamiliar
   // remote mapped, without a serial cable.
-  CASE("nothing is reported before any code arrives");
-  fakes::reset();
+  // begin() is the module's reset point. Leaving state behind it is benign on
+  // a board that boots once, but it is the same slip that left signal_light
+  // holding a stale flash timer and display talking to an absent panel.
+  CASE("begin() clears any code recorded before it");
+  start();
+  press(kFlash);
+  CHECK(remote_control::haveLastCode(), "precondition failed: nothing was recorded");
   remote_control::begin();
-  // haveLastCode() is sticky across the whole session by design; only assert
-  // the accessors are safe to call.
-  (void)remote_control::lastCodeHex();
-  (void)remote_control::lastProtocol();
+  CHECK(!remote_control::haveLastCode(), "a stale code survived begin()");
+  CHECK(remote_control::lastCodeHex()[0] == '\0', "begin() left '%s' behind",
+        remote_control::lastCodeHex());
+  CHECK(remote_control::lastProtocol()[0] == '\0', "begin() left a stale protocol behind");
+  CHECK(!remote_control::lastCodeMapped(), "begin() left the mapped flag set");
+
+  CASE("begin() also clears the hold-to-repeat target");
+  start();
+  press(kFlash);
+  const uint8_t heldBefore = s.dbMin;
+  remote_control::begin();
+  fakes::advanceMillis(500);
+  press(kNecRepeat);
+  CHECK(s.dbMin == heldBefore, "a repeat fired against a key press from before begin()");
 
   CASE("a mapped key is recorded, formatted and flagged as mapped");
   start();

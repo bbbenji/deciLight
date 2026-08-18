@@ -46,6 +46,16 @@ void markDirty() {
 }  // namespace
 
 void begin() {
+  // Establish a known state rather than relying on static initialisation, so
+  // begin() is a real reset point. The credential buffers matter in
+  // particular: getString leaves them untouched when the key is absent, so
+  // without clearing them first a missing key would read as whatever was
+  // there before.
+  dirty = false;
+  dirtySinceMs = 0;
+  wifiSsidBuf[0] = '\0';
+  wifiPassBuf[0] = '\0';
+
   // Opened once and left open; closing and reopening per access costs several
   // milliseconds and gains nothing.
   if (!prefs.begin(kNamespace, /*readOnly=*/false)) {

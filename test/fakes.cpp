@@ -124,11 +124,12 @@ size_t Preferences::putUInt(const char* key, uint32_t value) {
   return sizeof(uint32_t);
 }
 size_t Preferences::getString(const char* key, char* out, size_t max) {
+  // Faithful to the real library: a missing key returns 0 and leaves the
+  // caller's buffer exactly as it was. Clearing it here would be friendlier
+  // and would hide the class of bug where a caller assumes otherwise.
   auto it = nvsStr.find(key);
-  if (it == nvsStr.end() || max == 0) {
-    if (max) out[0] = '\0';
-    return 0;
-  }
+  if (it == nvsStr.end() || max == 0) return 0;
+
   const size_t n = it->second.copy(out, max - 1);
   out[n] = '\0';
   return n;

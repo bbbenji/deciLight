@@ -154,7 +154,19 @@ void apply(const KeyMapping& key) {
 
 }  // namespace
 
-void begin() { irrecv.enableIRIn(); }
+void begin() {
+  // Establish a known state rather than relying on static initialisation, so
+  // begin() is a real reset point - the same contract the other modules keep.
+  lastKey = nullptr;
+  lastAppliedMs = 0;
+  haveLast = false;
+  lastHex[0] = '\0';
+  lastProto[0] = '\0';
+  lastMapped = false;
+  lastSeenMs = 0;
+
+  irrecv.enableIRIn();
+}
 
 bool haveLastCode() { return haveLast; }
 const char* lastCodeHex() { return lastHex; }

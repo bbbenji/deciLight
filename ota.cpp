@@ -130,6 +130,13 @@ bool available() { return passwordConfigured(); }
 const char* username() { return OTA_USERNAME; }
 
 bool registerRoutes(WebServer& server) {
+  // Same reset contract as the other modules' begin(). These are also
+  // cleared at the start of every upload, but leaving them stale here would
+  // mean a completion handler could answer for an upload that never ran.
+  authorized = false;
+  wrote = false;
+  started = false;
+
   server.on(
       "/api/update", HTTP_POST,
       [&server]() { handleResult(server); },
