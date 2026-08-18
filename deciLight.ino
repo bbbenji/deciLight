@@ -69,6 +69,7 @@ void setup() {
   remote_control::begin();
 
   display::begin();
+  display::setBrightness(settings::get().displayBrightness);
   display::splash();
 
   micReady = sound_level::begin();

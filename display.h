@@ -36,6 +36,11 @@ bool present();
 // not block: the caller carries on immediately.
 void splash();
 
+// Panel contrast, 0-255. Zero powers the screen down rather than merely
+// dimming it, and while it is down no frames are sent at all - which also
+// gives back the 22ms of blocked loop() that each one costs.
+void setBrightness(uint8_t level);
+
 // One line of context for the top right - an IP address, or a short note when
 // there is no network. Copied, so the caller need not keep the string alive.
 void setStatus(const char* text);
@@ -54,6 +59,7 @@ void tick();
 inline bool begin() { return false; }
 inline bool present() { return false; }
 inline void splash() {}
+inline void setBrightness(uint8_t) {}
 inline void setStatus(const char*) {}
 inline void update(float, sound_level::Quality, const Settings&, signal_light::Mode,
                    signal_light::Zone) {}

@@ -14,6 +14,7 @@ constexpr char kNamespace[]  = "traffic";
 constexpr char kKeyDbMin[]   = "dB_min";
 constexpr char kKeyDbMax[]   = "dB_max";
 constexpr char kKeyBright[]  = "bright";
+constexpr char kKeyScreen[]  = "screen_bri";
 constexpr char kKeySsid[]    = "wifi_ssid";
 constexpr char kKeyPass[]    = "wifi_pass";
 
@@ -49,7 +50,8 @@ void begin() {
   // milliseconds and gains nothing.
   if (!prefs.begin(kNamespace, /*readOnly=*/false)) {
     Serial.println(F("settings: NVS unavailable, using defaults for this session"));
-    current = {DB_MIN_DEFAULT, DB_MAX_DEFAULT, LED_BRIGHTNESS_DEFAULT};
+    current = {DB_MIN_DEFAULT, DB_MAX_DEFAULT, LED_BRIGHTNESS_DEFAULT,
+               DISPLAY_BRIGHTNESS_DEFAULT};
     stored = current;
     dirty = false;
     return;
@@ -59,6 +61,9 @@ void begin() {
   current.dbMax = clampInt(prefs.getUInt(kKeyDbMax, DB_MAX_DEFAULT), DB_LIMIT_LOW, DB_LIMIT_HIGH);
   current.brightness = clampInt(prefs.getUInt(kKeyBright, LED_BRIGHTNESS_DEFAULT),
                                 LED_BRIGHTNESS_MIN, LED_BRIGHTNESS_MAX);
+  current.displayBrightness =
+      clampInt(prefs.getUInt(kKeyScreen, DISPLAY_BRIGHTNESS_DEFAULT),
+               DISPLAY_BRIGHTNESS_MIN, DISPLAY_BRIGHTNESS_MAX);
 
   // A unit flashed with an older build may hold a pair that violates the span.
   if (current.dbMax < current.dbMin + DB_MIN_SPAN) {
@@ -96,6 +101,13 @@ void setBrightness(int value) {
   markDirty();
 }
 
+void setDisplayBrightness(int value) {
+  const uint8_t next = clampInt(value, DISPLAY_BRIGHTNESS_MIN, DISPLAY_BRIGHTNESS_MAX);
+  if (next == current.displayBrightness) return;
+  current.displayBrightness = next;
+  markDirty();
+}
+
 void adjustDbMin(int delta) { setDbMin(current.dbMin + delta); }
 void adjustDbMax(int delta) { setDbMax(current.dbMax + delta); }
 void adjustBrightness(int delta) { setBrightness(current.brightness + delta); }
@@ -120,6 +132,8 @@ void tick() {
   if (current.dbMin != stored.dbMin) prefs.putUInt(kKeyDbMin, current.dbMin);
   if (current.dbMax != stored.dbMax) prefs.putUInt(kKeyDbMax, current.dbMax);
   if (current.brightness != stored.brightness) prefs.putUInt(kKeyBright, current.brightness);
+  if (current.displayBrightness != stored.displayBrightness)
+    prefs.putUInt(kKeyScreen, current.displayBrightness);
 
   stored = current;
   dirty = false;

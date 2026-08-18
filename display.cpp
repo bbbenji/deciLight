@@ -12,6 +12,7 @@ namespace {
 Adafruit_SSD1306 panel(DISPLAY_WIDTH, DISPLAY_HEIGHT, &Wire, /*rst_pin=*/-1);
 
 bool fitted = false;
+uint8_t brightness = DISPLAY_BRIGHTNESS_DEFAULT;
 char status[22] = "";
 
 // Everything that ends up on screen, reduced to values that can be compared.
@@ -55,6 +56,25 @@ int16_t xForDb(float db) {
   const float t = (db - float(DB_LIMIT_LOW)) / span;
   const int16_t x = int16_t(t * (BAR_W - 1) + 0.5f);
   return x < 0 ? 0 : (x > BAR_W - 1 ? BAR_W - 1 : x);
+}
+
+// Maps the stored setting onto the panel's contrast register. See the gamma
+// note in config.h for why this is not the identity.
+uint8_t contrastFor(uint8_t level) {
+  const float t = float(level) / float(DISPLAY_BRIGHTNESS_MAX);
+  const float scaled = powf(t, DISPLAY_BRIGHTNESS_GAMMA) * float(DISPLAY_BRIGHTNESS_MAX);
+  const uint8_t contrast = uint8_t(scaled + 0.5f);
+  return contrast < DISPLAY_CONTRAST_MIN ? DISPLAY_CONTRAST_MIN : contrast;
+}
+
+// Pre-charge is the only handle left once contrast is at its floor. The
+// phase-2 period (the high nibble) is ramped across the bottom of the slider
+// so it meets the driver's default exactly at DISPLAY_DIM_BELOW; a step there
+// would show up as the brightness jumping partway along the travel.
+uint8_t prechargeFor(uint8_t level) {
+  if (level >= DISPLAY_DIM_BELOW) return DISPLAY_PRECHARGE_NORMAL;
+  const uint8_t phase2 = 1 + uint8_t((uint16_t(level) * 14) / DISPLAY_DIM_BELOW);
+  return uint8_t((phase2 << 4) | 0x01);  // phase 1 stays at 1, as the driver sets it
 }
 
 // The built-in font advances 6px per character at size 1, and scales with it.
@@ -142,6 +162,7 @@ bool begin() {
   // begin() is a real reset point and a second call cannot inherit a panel
   // that is no longer there.
   fitted = false;
+  brightness = DISPLAY_BRIGHTNESS_DEFAULT;
   staged = Frame{};
   shown = Frame{};
   dirty = false;
@@ -169,6 +190,30 @@ bool begin() {
 }
 
 bool present() { return fitted; }
+
+void setBrightness(uint8_t level) {
+  if (!fitted) return;
+  const bool wasOff = brightness == 0;
+  brightness = level;
+
+  if (level == 0) {
+    panel.ssd1306_command(SSD1306_DISPLAYOFF);
+    return;
+  }
+
+  panel.ssd1306_command(SSD1306_DISPLAYON);
+  panel.ssd1306_command(SSD1306_SETPRECHARGE);
+  panel.ssd1306_command(prechargeFor(level));
+  panel.ssd1306_command(SSD1306_SETCONTRAST);
+  panel.ssd1306_command(contrastFor(level));
+
+  if (wasOff) {
+    // The panel forgets what was on it, and staged may already equal shown,
+    // so force the current frame back out rather than waiting for a change.
+    shown = Frame{};
+    dirty = true;
+  }
+}
 
 void splash() {
   if (!fitted) return;
@@ -208,7 +253,7 @@ void update(float leqDb, sound_level::Quality quality, const Settings& settings,
 }
 
 void tick() {
-  if (!fitted || !dirty) return;
+  if (!fitted || brightness == 0 || !dirty) return;
 
   // Signed comparison, so this survives the millis() rollover.
   if (splashUntilMs != 0) {

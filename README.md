@@ -111,7 +111,7 @@ Behind the page is a small HTTP API, if you would rather script it:
 | --- | --- |
 | `GET /api/state` | Level, quality, mode, zone, thresholds, brightness, network status and firmware version, as JSON |
 | `GET /api/version` | Just the product name and firmware version. Separate from `/api/state` so checking what a unit is running does not require pulling a live measurement - which is the question worth asking right after an over-the-air update |
-| `POST /api/set` | `dbMin`, `dbMax`, `brightness` - any subset |
+| `POST /api/set` | `dbMin`, `dbMax`, `brightness`, `displayBrightness` - any subset |
 | `POST /api/mode` | `mode=auto`, `mode=off`, or `mode=manual&color=RRGGBB` |
 | `POST /api/test` | Runs the LED self test |
 | `POST /api/wifi` | `ssid`, `pass` - saved to flash, then the unit restarts |
@@ -201,6 +201,12 @@ An SSD1306 128x64 OLED on the I2C pins shows the current level, the threshold wi
 
 It is genuinely optional. The panel is probed at both of its usual I2C addresses during boot, and if nothing answers every display call becomes a no-op, so the same firmware serves units built with and without a screen. Set `FEATURE_DISPLAY` to 0 to leave the code out entirely and save about 29KB.
 
+Screen brightness is adjustable from the Advanced section of the page and persists across reboots. Zero is not the dimmest setting but powers the panel down, which is what you want for a room the light stays in overnight - and while it is down no frames are sent at all.
+
+The scale is deliberately not linear. The panel's contrast register is roughly linear in drive current while perception is roughly logarithmic, so a linear slider spends most of its travel across a range that all looks much the same. `DISPLAY_BRIGHTNESS_GAMMA` curves it, putting half the travel at about a fifth of full drive.
+
+Two details matter at the dim end. Contrast zero is not the dimmest setting but no output at all, so `DISPLAY_CONTRAST_MIN` floors it and every position above zero shows something. And once contrast is at that floor the only remaining handle is the pre-charge period, which is ramped across the bottom tenth of the slider up to the value the driver itself uses - ramped rather than stepped, because a step there reads as the brightness lurching partway along the travel.
+
 Sending a full frame is roughly 1KB over I2C, about 22ms during which `loop()` is blocked. Two things keep that from mattering: the module compares what it is about to draw against what is already on the panel and skips the transfer when nothing visible has changed, and even a real change is never sent more often than `DISPLAY_MIN_INTERVAL_MS`. In a steady room the screen is usually not being written at all.
 
 #### Configuring
@@ -224,6 +230,7 @@ Almost everything worth changing is a named constant in `config.h`:
 | `FIRMWARE_VERSION`, `PRODUCT_NAME` | Shown on the splash screen and logged at boot |
 | `DISPLAY_SPLASH_MS` | How long the splash is held before measurements take the screen |
 | `DISPLAY_ADDRESSES`, `DISPLAY_MIN_INTERVAL_MS` | Which I2C addresses to probe, and the floor on redraw rate |
+| `DISPLAY_BRIGHTNESS_DEFAULT` | Panel contrast a factory-fresh unit starts at |
 | `WIFI_AP_SSID`, `WIFI_AP_PASSWORD` | The fallback access point |
 | `WIFI_HOSTNAME` | Also the mDNS name, so `decilight.local` follows it |
 

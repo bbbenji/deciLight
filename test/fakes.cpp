@@ -34,6 +34,9 @@ bool panelPresent = true;
 int frames = 0;
 std::string frameText;    // text drawn in the frame being composed
 std::string lastFrame;    // text of the most recently pushed frame
+std::map<uint8_t,int> panelCommands;
+std::map<uint8_t,uint8_t> panelValues;
+uint8_t pendingCommand = 0;  // command still awaiting its parameter byte
 
 }  // namespace
 
@@ -52,6 +55,9 @@ void reset() {
   frames = 0;
   frameText.clear();
   lastFrame.clear();
+  panelCommands.clear();
+  panelValues.clear();
+  pendingCommand = 0;
 }
 
 void advanceMillis(uint32_t ms) { nowMs += ms; }
@@ -72,6 +78,11 @@ void receiveIr(uint64_t code) { irQueue.push_back(code); }
 void setPanelPresent(bool present) { panelPresent = present; }
 int displayFrames() { return frames; }
 const char* displayText() { return lastFrame.c_str(); }
+int displayCommandCount(uint8_t c) { return panelCommands.count(c) ? panelCommands[c] : 0; }
+uint8_t lastContrast() { return lastCommandValue(SSD1306_SETCONTRAST); }
+uint8_t lastCommandValue(uint8_t c) {
+  return panelValues.count(c) ? panelValues[c] : 0;
+}
 
 }  // namespace fakes
 
@@ -153,6 +164,16 @@ void TwoWire::setClock(uint32_t) {}
 bool Adafruit_SSD1306::begin(uint8_t, uint8_t, bool, bool) { return panelPresent; }
 
 void Adafruit_SSD1306::clearDisplay() { frameText.clear(); }
+void Adafruit_SSD1306::ssd1306_command(uint8_t c) {
+  // Some commands are followed by a parameter byte written separately.
+  if (pendingCommand != 0) {
+    panelValues[pendingCommand] = c;
+    pendingCommand = 0;
+    return;
+  }
+  panelCommands[c]++;
+  if (c == SSD1306_SETCONTRAST || c == SSD1306_SETPRECHARGE) pendingCommand = c;
+}
 void Adafruit_SSD1306::display() {
   frames++;
   lastFrame = frameText;

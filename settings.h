@@ -13,7 +13,8 @@
 struct Settings {
   uint8_t dbMin;       // below this the light is green
   uint8_t dbMax;       // above this the light is red
-  uint8_t brightness;  // 0-255, applied globally by FastLED
+  uint8_t brightness;         // 0-255, applied globally by FastLED
+  uint8_t displayBrightness;  // 0-255 panel contrast; 0 powers the screen down
 };
 
 namespace settings {
@@ -29,6 +30,7 @@ const Settings& get();
 void setDbMin(int value);
 void setDbMax(int value);
 void setBrightness(int value);
+void setDisplayBrightness(int value);
 
 // Relative equivalents, for the remote's step keys.
 void adjustDbMin(int delta);

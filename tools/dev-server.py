@@ -70,6 +70,7 @@ class Device:
         self.db_min = int(CFG["DB_MIN_DEFAULT"])
         self.db_max = int(CFG["DB_MAX_DEFAULT"])
         self.brightness = int(CFG["LED_BRIGHTNESS_DEFAULT"])
+        self.display_brightness = int(CFG["DISPLAY_BRIGHTNESS_DEFAULT"])
         self.mode = "auto"
         self.color = "%06X" % int(CFG["COLOR_QUIET"])
         self.zone = "unknown"
@@ -150,6 +151,7 @@ class Device:
             "dbMin": self.db_min,
             "dbMax": self.db_max,
             "brightness": self.brightness,
+            "displayBrightness": self.display_brightness,
             "net": "ap",
             "ssid": "deciLight (dev server)",
             "ip": "127.0.0.1",
@@ -171,6 +173,11 @@ class Device:
         if "brightness" in args:
             self.brightness = int(
                 clamp(int(args["brightness"][0]), CFG["LED_BRIGHTNESS_MIN"], CFG["LED_BRIGHTNESS_MAX"])
+            )
+        if "displayBrightness" in args:
+            self.display_brightness = int(
+                clamp(int(args["displayBrightness"][0]),
+                      CFG["DISPLAY_BRIGHTNESS_MIN"], CFG["DISPLAY_BRIGHTNESS_MAX"])
             )
 
     def set_mode(self, args):

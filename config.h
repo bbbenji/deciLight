@@ -32,7 +32,7 @@ constexpr uint32_t SERIAL_BAUD = 115200;
 // Bump it when you flash something you want to be able to identify later -
 // with OTA in the picture, "which build is actually on that unit" stops being
 // a rhetorical question.
-#define FIRMWARE_VERSION_JSON "1.0.4"
+#define FIRMWARE_VERSION_JSON "1.0.5"
 constexpr char FIRMWARE_VERSION[] = FIRMWARE_VERSION_JSON;
 
 // The name on the splash screen. Lower-case "d" to match how the project
@@ -106,6 +106,34 @@ constexpr uint32_t DISPLAY_MIN_INTERVAL_MS = 250;
 // and on a unit joining a stored WiFi network the splash is usually still up
 // well past this anyway.
 constexpr uint32_t DISPLAY_SPLASH_MS = 2000;
+
+// Panel contrast. 207 is 0xCF, which is what the SSD1306 driver sets for a
+// charge-pump supply, so the default leaves the panel exactly as the library
+// would. Zero is not merely the dimmest setting - it powers the panel down,
+// which is the useful thing for a room the light stays in overnight.
+constexpr uint8_t DISPLAY_BRIGHTNESS_DEFAULT = 207;
+constexpr uint8_t DISPLAY_BRIGHTNESS_MIN     = 0;
+constexpr uint8_t DISPLAY_BRIGHTNESS_MAX     = 255;
+
+// The contrast register is roughly linear in drive current while perception
+// is roughly logarithmic, so a linear slider spends most of its travel in a
+// range that all looks equally bright. The setting is curved before it
+// reaches the panel: at 2.2, half travel gives about a fifth of full drive
+// and the bottom of the slider is genuinely dim rather than nominally so.
+constexpr float DISPLAY_BRIGHTNESS_GAMMA = 2.2f;
+
+// Contrast zero is not the dimmest setting, it is off: the panel produces no
+// visible output at all. Any non-zero brightness is therefore floored here,
+// so every position on the slider above zero shows something. Raise it if a
+// particular panel needs more before it lights.
+constexpr uint8_t DISPLAY_CONTRAST_MIN = 1;
+
+// Reaching below the contrast floor means shortening the pre-charge period
+// instead. Below DISPLAY_DIM_BELOW the phase-2 period is ramped from its
+// shortest up to the driver's own 0xF1, rather than stepped - a step there
+// produces a visible jump in brightness partway along the slider.
+constexpr uint8_t DISPLAY_DIM_BELOW        = 26;
+constexpr uint8_t DISPLAY_PRECHARGE_NORMAL = 0xF1;
 
 // -----------------------------------------------------------------------------
 // Thresholds

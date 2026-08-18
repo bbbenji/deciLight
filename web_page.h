@@ -72,7 +72,7 @@ color:var(--text);font:inherit;font-size:15px}
 input[type=file]{width:100%;margin-top:8px;color:var(--dim);font-size:13px}
 .bar{height:6px;border-radius:3px;background:#242835;margin-top:12px;overflow:hidden}
 .bar i{display:block;height:100%;width:0;background:#5b8cff;transition:width .2s}
-#otanote,#testnote,#irnote{color:var(--dim);font-size:13px;margin-top:10px}
+#otanote,#testnote,#irnote,#scrnote{color:var(--dim);font-size:13px;margin-top:10px}
 #testnote.live{color:var(--text);font-weight:600}
 #irnote b{color:var(--text);font-variant-numeric:tabular-nums}
 </style>
@@ -107,6 +107,14 @@ input[type=file]{width:100%;margin-top:8px;color:var(--dim);font-size:13px}
 <div class="card">
   <details>
     <summary class="adv">Advanced</summary>
+
+    <details class="sub">
+      <summary>Screen</summary>
+      <label>Screen brightness <b><span id="vscr"></span></b></label>
+      <input type="range" id="sscr" min="0" max="255">
+      <div id="scrnote">The scale is weighted towards the dim end. Zero
+        switches the screen off entirely.</div>
+    </details>
 
     <details class="sub">
       <summary>Join a WiFi network</summary>
@@ -158,7 +166,8 @@ $("wsave").onclick=function(){
   $("net").textContent="Restarting...";
 };
 
-[["smin","dbMin"],["smax","dbMax"],["sbri","brightness"]].forEach(function(p){
+[["smin","dbMin"],["smax","dbMax"],["sbri","brightness"],
+ ["sscr","displayBrightness"]].forEach(function(p){
   var el=$(p[0]);
   el.addEventListener("input",function(){dragging=p[0];paint()});
   el.addEventListener("change",function(){
@@ -185,6 +194,8 @@ function paint(){
   $("vmin").textContent=lo; $("vmax").textContent=hi;
   $("lo").textContent=lo; $("hi").textContent=hi;
   $("vbri").textContent=Math.round($("sbri").value/255*100);
+  var scr=+$("sscr").value;
+  $("vscr").textContent=scr==0 ? "off" : Math.round(scr/255*100)+"%";
 }
 
 function render(s){
@@ -202,6 +213,7 @@ function render(s){
   if(dragging!="smin") $("smin").value=s.dbMin;
   if(dragging!="smax") $("smax").value=s.dbMax;
   if(dragging!="sbri") $("sbri").value=s.brightness;
+  if(dragging!="sscr") $("sscr").value=s.displayBrightness;
   paint();
   $("otacard").hidden=!s.ota;
   otaUser=s.otaUser||"";

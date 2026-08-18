@@ -16,6 +16,12 @@
 #define SSD1306_WHITE 1
 #define SSD1306_SWITCHCAPVCC 0x02
 
+// Command bytes, matching the values in the real driver.
+#define SSD1306_SETCONTRAST 0x81
+#define SSD1306_DISPLAYOFF 0xAE
+#define SSD1306_DISPLAYON 0xAF
+#define SSD1306_SETPRECHARGE 0xD9
+
 class Adafruit_SSD1306 {
  public:
   Adafruit_SSD1306(uint8_t w, uint8_t h, TwoWire* twi = &Wire, int8_t rst = -1)
@@ -26,6 +32,7 @@ class Adafruit_SSD1306 {
 
   void clearDisplay();
   void display();
+  void ssd1306_command(uint8_t c);
 
   void setTextColor(uint16_t c);
   void setTextSize(uint8_t s);

@@ -108,6 +108,20 @@ void test_settings() {
   CHECK(fakes::nvsWrites() == 1, "expected only dbMax to be written, got %d writes",
         fakes::nvsWrites());
 
+  CASE("screen brightness clamps and persists like the others");
+  fakes::reset();
+  settings::begin();
+  CHECK(s.displayBrightness == DISPLAY_BRIGHTNESS_DEFAULT, "default %u, want %u",
+        s.displayBrightness, DISPLAY_BRIGHTNESS_DEFAULT);
+  settings::setDisplayBrightness(9999);
+  CHECK(s.displayBrightness == DISPLAY_BRIGHTNESS_MAX, "ceiling %u", s.displayBrightness);
+  settings::setDisplayBrightness(-5);
+  CHECK(s.displayBrightness == DISPLAY_BRIGHTNESS_MIN, "floor %u", s.displayBrightness);
+  fakes::advanceMillis(5000);
+  settings::tick();
+  CHECK(fakes::storedUInt("screen_bri", 999) == s.displayBrightness,
+        "not written to NVS");
+
   CASE("wifi credentials round-trip and are written immediately");
   fakes::reset();
   settings::begin();

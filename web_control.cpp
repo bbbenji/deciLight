@@ -7,6 +7,7 @@
 #include <WebServer.h>
 #include <WiFi.h>
 
+#include "display.h"
 #include "ota.h"
 #include "remote_control.h"
 #include "settings.h"
@@ -120,6 +121,7 @@ void sendState() {
   appendInt(out, "dbMin", s.dbMin);
   appendInt(out, "dbMax", s.dbMax);
   appendInt(out, "brightness", s.brightness);
+  appendInt(out, "displayBrightness", s.displayBrightness);
   appendStr(out, "net", accessPointMode ? "ap" : "sta");
   appendStr(out, "ssid", ssid.c_str());
   appendStr(out, "ip", ip.toString().c_str());
@@ -161,6 +163,10 @@ void handleSet() {
   if (server.hasArg("brightness")) {
     settings::setBrightness(server.arg("brightness").toInt());
     signal_light::setBrightness(settings::get().brightness);
+  }
+  if (server.hasArg("displayBrightness")) {
+    settings::setDisplayBrightness(server.arg("displayBrightness").toInt());
+    display::setBrightness(settings::get().displayBrightness);
   }
   sendState();
 }

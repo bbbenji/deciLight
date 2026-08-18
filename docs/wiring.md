@@ -197,6 +197,9 @@ bottom. When the microphone is out of range the bottom right reads `OVER` or
 `QUIET`, which usually means a wiring problem rather than a genuinely extreme
 room.
 
+Brightness is adjustable from the web interface and survives a reboot; setting
+it to zero powers the panel down rather than merely dimming it.
+
 The panel is optional and probed at boot: if nothing answers at either address
 the firmware carries on without it, so the same build serves units with and
 without a screen. `FEATURE_DISPLAY` in `config.h` removes the code entirely

@@ -11,6 +11,8 @@
 
 #include <string.h>
 
+#include <Adafruit_SSD1306.h>
+
 #include "../config.h"
 #include "../display.h"
 #include "../settings.h"
@@ -20,10 +22,11 @@
 namespace {
 
 Settings makeSettings(uint8_t lo = 40, uint8_t hi = 60, uint8_t bright = 255) {
-  Settings s;
+  Settings s{};
   s.dbMin = lo;
   s.dbMax = hi;
   s.brightness = bright;
+  s.displayBrightness = DISPLAY_BRIGHTNESS_DEFAULT;
   return s;
 }
 
@@ -172,6 +175,113 @@ void test_display() {
   display::begin();
   display::splash();
   CHECK(fakes::displayFrames() == 0, "drew a splash with no panel");
+
+  CASE("brightness reaches the panel as a contrast level");
+  fakes::reset();
+  fakes::setPanelPresent(true);
+  display::begin();
+  display::setBrightness(90);
+  CHECK(fakes::displayCommandCount(SSD1306_DISPLAYON) >= 1, "panel was not switched on");
+  CHECK(fakes::lastContrast() > 0 && fakes::lastContrast() < 90,
+        "contrast %u should be curved below the setting", fakes::lastContrast());
+
+  // A linear slider spends most of its travel in a range that all looks much
+  // the same. The curve is what makes the bottom of it useful.
+  CASE("the scale is curved, not linear");
+  display::setBrightness(DISPLAY_BRIGHTNESS_MAX);
+  CHECK(fakes::lastContrast() == DISPLAY_BRIGHTNESS_MAX, "full scale gave %u, want %u",
+        fakes::lastContrast(), DISPLAY_BRIGHTNESS_MAX);
+  display::setBrightness(128);
+  const uint8_t half = fakes::lastContrast();
+  CHECK(half > 40 && half < 80, "half travel gave contrast %u, expected roughly a fifth", half);
+  // Contrast zero is off, not dim, so no non-zero setting may reach it.
+  CASE("no setting above zero leaves the panel dark");
+  for (int level = 1; level <= 255; level++) {
+    display::setBrightness(uint8_t(level));
+    if (fakes::lastContrast() < DISPLAY_CONTRAST_MIN) {
+      CHECK(false, "level %d gave contrast %u, below the visible floor", level,
+            fakes::lastContrast());
+      break;
+    }
+  }
+
+  // Contrast bottoms out while the panel is still clearly lit, so the low end
+  // shortens the pre-charge period as well to get below that floor.
+  CASE("pre-charge ramps across the bottom and meets the driver default");
+  display::setBrightness(1);
+  const uint8_t lowest = fakes::lastCommandValue(SSD1306_SETPRECHARGE);
+  CHECK(lowest < DISPLAY_PRECHARGE_NORMAL, "bottom pre-charge 0x%02X is not shortened",
+        lowest);
+  display::setBrightness(DISPLAY_BRIGHTNESS_MAX);
+  CHECK(fakes::lastCommandValue(SSD1306_SETPRECHARGE) == DISPLAY_PRECHARGE_NORMAL,
+        "pre-charge 0x%02X at full, want the driver default 0x%02X",
+        fakes::lastCommandValue(SSD1306_SETPRECHARGE), DISPLAY_PRECHARGE_NORMAL);
+
+  // A step here would read as the brightness lurching partway along the slider.
+  CASE("pre-charge never steps by more than one phase between adjacent levels");
+  uint8_t previous = 0;
+  for (int level = 1; level <= DISPLAY_DIM_BELOW + 2; level++) {
+    display::setBrightness(uint8_t(level));
+    const uint8_t phase2 = fakes::lastCommandValue(SSD1306_SETPRECHARGE) >> 4;
+    if (level > 1 && (phase2 < previous || phase2 - previous > 1)) {
+      CHECK(false, "phase 2 jumped %u -> %u at level %d", previous, phase2, level);
+      break;
+    }
+    previous = phase2;
+  }
+  CHECK(previous == (DISPLAY_PRECHARGE_NORMAL >> 4),
+        "ramp ended at phase 2 = %u, want %u", previous, DISPLAY_PRECHARGE_NORMAL >> 4);
+
+  CASE("brightness is not lost when set again");
+  display::setBrightness(90);
+
+  // Zero powers the panel down, which also means there is no point spending
+  // 22ms of blocked loop() pushing frames nobody can see.
+  CASE("zero powers the panel down and stops frames");
+  fakes::advanceMillis(DISPLAY_SPLASH_MS + 1);
+  display::setBrightness(0);
+  CHECK(fakes::displayCommandCount(SSD1306_DISPLAYOFF) == 1, "panel was not switched off");
+  before = fakes::displayFrames();
+  for (int i = 0; i < 20; i++) {
+    waitOutInterval();
+    show(40.0f + i, s);
+  }
+  CHECK(fakes::displayFrames() == before, "%d frame(s) drawn to a powered-down panel",
+        fakes::displayFrames() - before);
+
+  CASE("turning it back on redraws what is current");
+  display::setBrightness(200);
+  CHECK(fakes::lastContrast() > 0, "panel was not given a contrast on wake");
+  waitOutInterval();
+  display::tick();
+  CHECK(fakes::displayFrames() == before + 1, "the panel was not redrawn on wake");
+
+  // The panel loses its contents when powered down. If nothing has changed in
+  // the meantime, the staged frame still matches what was last drawn, so
+  // without an explicit invalidation the screen would come back blank and
+  // stay that way until the level happened to move.
+  CASE("waking an idle panel redraws it even though nothing changed");
+  fakes::reset();
+  fakes::setPanelPresent(true);
+  display::begin();
+  display::setBrightness(200);
+  fakes::advanceMillis(DISPLAY_SPLASH_MS + 1);
+  show(52.0f, s);
+  waitOutInterval();
+  show(52.0f, s);
+  const int idle = fakes::displayFrames();
+  display::setBrightness(0);
+  display::setBrightness(200);   // nothing measured in between
+  waitOutInterval();
+  display::tick();
+  CHECK(fakes::displayFrames() == idle + 1, "the panel was not redrawn on wake");
+
+  CASE("brightness on a unit with no panel is harmless");
+  fakes::reset();
+  fakes::setPanelPresent(false);
+  display::begin();
+  display::setBrightness(120);
+  CHECK(fakes::displayCommandCount(SSD1306_DISPLAYON) == 0, "talked to a panel that is absent");
 
   CASE("the status line is shown and can be changed");
   fakes::reset();

@@ -36,6 +36,9 @@ void receiveIr(uint64_t code);  // queue one decoded code for the next poll()
 void setPanelPresent(bool present);  // whether begin() finds an SSD1306
 int displayFrames();                 // full frames pushed since reset()
 const char* displayText();           // text drawn in the most recent frame
+int displayCommandCount(uint8_t c);  // how many times a raw panel command was sent
+uint8_t lastContrast();              // value that followed the last SETCONTRAST
+uint8_t lastCommandValue(uint8_t c); // parameter byte that followed command c
 
 }  // namespace fakes
 
