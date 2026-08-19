@@ -2,11 +2,20 @@
 
 [![Build firmware](https://github.com/bbbenji/deciLight/actions/workflows/build.yml/badge.svg)](https://github.com/bbbenji/deciLight/actions/workflows/build.yml)
 
-deciLight is a WIP traffic signal-inspired lighting system, designed to dynamically respond to ambient sound levels. This modular, stackable light features a unique capability to change colors—from red to yellow to green—based on the decibel levels in its surrounding environment. Users can set and adjust sensitivity thresholds remotely using an infrared (IR) remote control, which also allows for manual color and brightness changes, offering versatility and convenience.
+deciLight is a traffic signal-inspired lighting system that responds to ambient sound. It measures a properly A-weighted sound level with an I2S microphone and colours itself from it—green while a room is quiet, yellow as it rises, red once it is too loud.
+
+Thresholds, colours and brightness can be set from an infrared remote, or from any phone or laptop browser without installing anything. An optional screen shows the live level, and units can be linked so that several lights act as one.
+
+- **Real measurement.** A-weighted LAeq from a digital microphone, filtered on a dedicated core, not a bare analogue reading.
+- **Two ways to control it.** A 24-key IR remote, and a self-contained web interface the unit serves itself.
+- **Optional status screen.** A 128x64 OLED showing level, thresholds, mode and the unit's address.
+- **Groups.** Give two units the same group name and they act as one light—including three stacked as a working traffic signal, one lamp each.
+- **Updates over the air.** Reflash a mounted unit from the browser instead of taking it down for a cable.
+- **Works with no network at all.** A unit that cannot find WiFi brings up its own access point, so it is usable in any room.
 
 ### Classroom Noise Management
 
-In the classroom, deciLight can serve as an effective noise monitor, signaling to students when the noise level has become too high (red), when it's close (yellow), or when the classroom environment is at an acceptable sound level (green). This visual cue helps in self-regulation, as students can adjust their volume without direct intervention from the teacher, fostering a sense of responsibility and self-awareness among the pupils. By setting specific decibel thresholds via the IR remote, educators can customize the sensitivity of deciLight to suit the needs of different activities, whether it's quiet reading time or a lively group discussion.
+In the classroom, deciLight can serve as an effective noise monitor, signaling to students when the noise level has become too high (red), when it's close (yellow), or when the classroom environment is at an acceptable sound level (green). This visual cue helps in self-regulation, as students can adjust their volume without direct intervention from the teacher, fostering a sense of responsibility and self-awareness among the pupils. By setting specific decibel thresholds—from the IR remote or a phone—educators can customize the sensitivity of deciLight to suit the needs of different activities, whether it's quiet reading time or a lively group discussion.
 
 ### Educational Games and Activities
 
@@ -18,10 +27,11 @@ Beyond its utility as a noise monitor, deciLight's color-changing feature can be
 
 ### Bill of Materials (BOM):
 
-- **ESP32 Microcontroller:** The brain of deciLight, offering WiFi and Bluetooth capabilities for future expansions and updates.
+- **ESP32 Microcontroller:** The brain of deciLight. Either a FireBeetle ESP32 or any generic ESP-WROOM-32 development board; its WiFi carries both the web interface and the link between units.
 - **NeoPixel Jewel:** Provides bright, customizable colors for the light signal, ensuring vivid visibility.
 - **IR Receiver:** Enables remote control functionality, allowing users to adjust settings and change colors from a distance.
-- **I2S MEMS Microphone:** Senses ambient sound levels to trigger color changes based on predefined decibel thresholds.
+- **I2S MEMS Microphone:** Senses ambient sound levels to trigger color changes based on predefined decibel thresholds. An INMP441 or ICS-43434; filter coefficients for several others are included.
+- **0.96" SSD1306 OLED (optional):** A 128x64 I2C module showing the live level, thresholds and mode. The firmware detects whether one is fitted, so the same build serves units with and without.
 - **Screws for Assembly:** m3x5 screws (4), m3-3 screws (2), and m1.5x3 screws (4-8) for secure assembly and mounting.
 - **IR LED Remote:** Offers a user-friendly interface for adjusting deciLight settings and colors remotely.
 - **5V 2A USB Power Supply:** Ensures reliable power delivery to the deciLight. A high-quality supply is recommended for optimal performance.
@@ -29,9 +39,12 @@ Beyond its utility as a noise monitor, deciLight's color-changing feature can be
 
 ### Future Enhancements:
 
-- **Networked Synchronization:** The ability to pair multiple deciLights (ESP-NOW?), creating a cohesive and synchronized lighting experience across multiple units.
-- **External Display:** Show operational modes and noise thresholds in real-time.
-- **Multi-device control:** Control multiple deciLights via single IR remote.
+Networked synchronisation, the external display and controlling several units from one remote have all landed—see [Groups](#groups) and [Status screen](#status-screen). What is still open:
+
+- **Authenticated group traffic:** membership is currently a convention rather than a secret. Anything in radio range running this firmware with the same group name joins in.
+- **Quiet hours:** put the light and screen to sleep outside teaching time rather than leaving them lit overnight.
+- **Calibration helper:** `MIC_OFFSET_DB` is adjusted by hand against a reference meter. A guided routine would make that less fiddly.
+- **Enclosure revision:** the printed parts predate the screen and have nowhere to mount it.
 
 ### Assembly & Printing Tips:
 
@@ -49,6 +62,7 @@ Pin assignments and hookup diagrams for every module are in [docs/wiring.md](doc
 
 ### Schematic:
 
+Note that this predates the optional OLED; [docs/wiring.md](docs/wiring.md) is the current reference and covers the screen.
 
 ![Screenshot from 2024-02-13 23-50-47](https://github.com/bbbenji/deciLight/assets/1678118/5957b364-939a-45fc-963b-7a0aaaa96e0c)
 
@@ -74,6 +88,7 @@ The sketch is split by responsibility, so that adding a feature usually means to
 | `web_page.h` | The control page, served from flash |
 | `ota.{h,cpp}` | Over-the-air firmware updates |
 | `display.{h,cpp}` | Optional SSD1306 status screen |
+| `group_sync.{h,cpp}` | ESP-NOW link between units: level sharing, and relaying settings, mode and the self test |
 | `tools/dev-server.py` | Serves the control page against a simulated device, for working on the UI without hardware |
 | `sos-iir-filter.h` | Second-Order Sections filter kernel, with a hand-written Xtensa assembly inner loop. Upstream code from [esp32-i2s-slm](https://github.com/ikostoski/esp32-i2s-slm), unmodified |
 | `math/*.m` | GNU Octave scripts that generate the equaliser coefficients for each supported microphone |
@@ -90,6 +105,8 @@ Two FreeRTOS tasks, connected by a queue:
 The split matters because the FPU-heavy filtering can then be scheduled independently of the LED and remote work. The sample rate is fixed at 48kHz by the design of the IIR filters - changing it invalidates the coefficients.
 
 Colour is chosen with hysteresis rather than a bare comparison, so a room sitting exactly on a threshold does not strobe between two colours. `DB_SMOOTHING` sets how quickly the light reacts, `DB_HYSTERESIS` sets how far past a threshold the level must travel before the colour changes.
+
+When a unit belongs to a group, the level fed into that decision is the group's rather than its own, and everything downstream - smoothing, hysteresis, zone - works exactly as it does for a lone light. That is what keeps a stack of three and a single unit running the same code path.
 
 #### Mobile control
 
@@ -136,13 +153,13 @@ Once a unit is on the network it can be reflashed from the same page, so a light
 
 **This is off by default and has to be turned on deliberately.** An update endpoint accepts arbitrary code, the access point password is published in this repository, and the two together would let anyone within WiFi range replace the firmware. So `OTA_PASSWORD` in `config.h` is empty out of the box and every upload is refused until you set it; the page hides the upload form entirely while that is the case. Pick a password you do not use elsewhere - it travels as base64 over plain HTTP, which is fine on a classroom LAN and not fine anywhere else.
 
-Set `FEATURE_OTA` to 0 to leave the code out of the build altogether. It costs about 6KB.
+Set `FEATURE_OTA` to 0 to leave the code out of the build altogether. It costs about 10KB.
 
-Set `FEATURE_WIFI` to 0 in `config.h` to build without any of this. That saves about 500KB of flash and 23KB of RAM, and the result fits the stock partition layout.
+Set `FEATURE_WIFI` to 0 in `config.h` to build without any of this. That saves about 502KB of flash and 19KB of RAM, and takes the group features with it.
 
 #### Building
 
-Requires the ESP32 core and two libraries. Verified against ESP32 core 2.0.5, FastLED 3.9.20 and IRremoteESP8266 2.9.0. Arch Linux users have a few distribution-specific hurdles - serial port groups and an easily missed dependency - covered in [docs/building-arch-linux.md](docs/building-arch-linux.md).
+Requires the ESP32 core and three libraries. Verified against ESP32 core 2.0.5, FastLED 3.9.20 and IRremoteESP8266 2.9.0. Arch Linux users have a few distribution-specific hurdles - serial port groups and an easily missed dependency - covered in [docs/building-arch-linux.md](docs/building-arch-linux.md).
 
 ```sh
 arduino-cli config add board_manager.additional_urls \
@@ -158,13 +175,13 @@ arduino-cli compile --fqbn esp32:esp32:firebeetle32 .
 arduino-cli upload -p /dev/ttyUSB0 --fqbn esp32:esp32:firebeetle32 .
 ```
 
-That builds to about 68% of the stock application partition, or 26% with `FEATURE_WIFI` set to 0. No flags, no custom partition table.
+That builds to about 74% of the stock application partition - or 70% with the optional size trim below, and 31% with `FEATURE_WIFI` set to 0. No custom partition table either way.
 
 Two boards are supported and CI builds both. For a generic ESP-WROOM-32 dev board - DevKit v1, DOIT, NodeMCU-32S and the like - swap the FQBN for `esp32:esp32:esp32:FlashFreq=80`. Same module, same firmware, same pins; only the board definition differs. See [docs/wiring.md](docs/wiring.md) for the two GPIOs whose behaviour is worth knowing about.
 
 **Pin FastLED at 3.9.20.** The 3.10 series switched to a unity build that drags in the entire libstdc++ locale stack, which costs roughly 440KB of flash on a project whose only demand of the library is solid colours on seven LEDs. Nothing needs those 440KB, and with them the firmware no longer fits the stock partition layout. CI enforces a size budget so this cannot creep back in unnoticed.
 
-Optionally, trim IRremoteESP8266 down to the protocols this project uses, which saves a further 51KB:
+Optionally, trim IRremoteESP8266 down to the protocols this project uses, which saves about 50KB:
 
 ```sh
 arduino-cli compile --fqbn esp32:esp32:firebeetle32 \
@@ -200,7 +217,7 @@ By default it sweeps the level across the whole range every 40 seconds, so every
 
 An SSD1306 128x64 OLED on the I2C pins shows the current level, the threshold window, the operating mode and the unit's address. At boot it shows the product name and firmware version for a couple of seconds first, which is the quickest way to tell what is actually running on a unit after an over-the-air update. Wiring is in [docs/wiring.md](docs/wiring.md).
 
-It is genuinely optional. The panel is probed at both of its usual I2C addresses during boot, and if nothing answers every display call becomes a no-op, so the same firmware serves units built with and without a screen. Set `FEATURE_DISPLAY` to 0 to leave the code out entirely and save about 29KB.
+It is genuinely optional. The panel is probed at both of its usual I2C addresses during boot, and if nothing answers every display call becomes a no-op, so the same firmware serves units built with and without a screen. Set `FEATURE_DISPLAY` to 0 to leave the code out entirely and save about 32KB.
 
 Screen brightness is adjustable from the Advanced section of the page and persists across reboots. Zero is not the dimmest setting but powers the panel down, which is what you want for a room the light stays in overnight - and while it is down no frames are sent at all.
 
@@ -234,7 +251,7 @@ Zone masks, group name, screen brightness and the inactive level are deliberatel
 
 Membership is a convention rather than a secret: the transport is broadcast and the group name is a filter, so anything in radio range running this firmware with the same name joins in.
 
-Set `FEATURE_ESPNOW` to 0 to leave all of it out.
+Set `FEATURE_ESPNOW` to 0 to leave all of it out, which saves about 9KB.
 
 #### Configuring
 
