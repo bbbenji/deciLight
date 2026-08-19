@@ -24,6 +24,17 @@ bool accessPointMode = false;
 bool running = false;
 char addressText[16] = "";
 
+// Networking is a small state machine rather than a one-shot at boot, so a
+// unit that comes up before the building's router still ends up on it.
+enum class Net : uint8_t {
+  Connecting,  // station attempt in flight
+  Connected,   // on the stored network
+  Dropped,     // was connected, waiting to see if it returns
+  Ap,          // serving our own access point
+};
+Net netState = Net::Ap;
+uint32_t stateSinceMs = 0;
+
 // Newest measurement, refreshed from loop() and read by the status endpoint.
 sound_level::Reading latest = {0.0f, sound_level::Quality::BelowNoiseFloor};
 
@@ -262,30 +273,30 @@ void handleWifi() {
   ESP.restart();
 }
 
-bool connectToStoredNetwork() {
+void rememberAddress(const IPAddress& ip) {
+  strncpy(addressText, ip.toString().c_str(), sizeof(addressText) - 1);
+  addressText[sizeof(addressText) - 1] = '\0';
+}
+
+void enterState(Net next) {
+  netState = next;
+  stateSinceMs = millis();
+}
+
+// Kicks off a station attempt without waiting for it. Callers poll the state
+// machine; nothing here may block, because tick() runs it.
+bool startStationAttempt() {
   const char* ssid = settings::wifiSsid();
   if (ssid[0] == '\0') return false;
 
   Serial.printf("wifi: joining %s\n", ssid);
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(WIFI_HOSTNAME);
-  // Power save parks the radio between beacons, which silently drops
-  // incoming ESP-NOW packets. This is a mains-powered device, so the trade is
-  // easy.
+  // Power save parks the radio between beacons, which silently drops incoming
+  // ESP-NOW packets. This is a mains-powered device, so the trade is easy.
   WiFi.setSleep(false);
   WiFi.begin(ssid, settings::wifiPassword());
-
-  const uint32_t startedMs = millis();
-  while (WiFi.status() != WL_CONNECTED) {
-    if (millis() - startedMs >= WIFI_CONNECT_TIMEOUT_MS) {
-      Serial.println(F("wifi: timed out"));
-      WiFi.disconnect(true);
-      return false;
-    }
-    delay(100);
-  }
-  Serial.print(F("wifi: connected, http://"));
-  Serial.println(WiFi.localIP());
+  enterState(Net::Connecting);
   return true;
 }
 
@@ -302,11 +313,87 @@ bool startAccessPoint() {
     Serial.println(F("wifi: could not start the access point"));
     return false;
   }
+  accessPointMode = true;
+  rememberAddress(WiFi.softAPIP());
+  enterState(Net::Ap);
+
+  // Same reason as onStationUp(): the ESP-NOW peer is bound to an interface
+  // when it is added, so changing mode leaves it pointing at one that is no
+  // longer carrying traffic. Both directions of the switch rebuild it.
+  group_sync::begin();
+
   Serial.print(F("wifi: access point "));
   Serial.print(WIFI_AP_SSID);
   Serial.print(F(", http://"));
   Serial.println(WiFi.softAPIP());
   return true;
+}
+
+void onStationUp() {
+  accessPointMode = false;
+  rememberAddress(WiFi.localIP());
+  enterState(Net::Connected);
+
+  Serial.print(F("wifi: connected, http://"));
+  Serial.println(addressText);
+
+  MDNS.end();
+  if (MDNS.begin(WIFI_HOSTNAME)) MDNS.addService("http", "tcp", WEB_SERVER_PORT);
+
+  // The channel almost certainly changed, which invalidates the ESP-NOW
+  // broadcast peer, so the group is rebuilt on the new one.
+  group_sync::begin();
+}
+
+// Called from tick(). Every branch returns promptly; none of them wait.
+void maintainNetwork() {
+  const uint32_t now = millis();
+
+  switch (netState) {
+    case Net::Connecting:
+      if (WiFi.status() == WL_CONNECTED) {
+        onStationUp();
+      } else if (now - stateSinceMs >= WIFI_CONNECT_TIMEOUT_MS) {
+        Serial.println(F("wifi: timed out, falling back to the access point"));
+        WiFi.disconnect(true);
+        startAccessPoint();
+      }
+      break;
+
+    case Net::Connected:
+      if (WiFi.status() != WL_CONNECTED) {
+        Serial.println(F("wifi: connection dropped"));
+        enterState(Net::Dropped);
+      } else if (WiFi.localIP().toString() != String(addressText)) {
+        // A lease change would otherwise leave the screen and the web page
+        // advertising an address that no longer reaches the unit.
+        rememberAddress(WiFi.localIP());
+        Serial.print(F("wifi: address is now "));
+        Serial.println(addressText);
+      }
+      break;
+
+    case Net::Dropped:
+      // The core retries on its own; this is the point at which we stop
+      // believing it and make the unit reachable some other way.
+      if (WiFi.status() == WL_CONNECTED) {
+        onStationUp();
+      } else if (now - stateSinceMs >= WIFI_FALLBACK_AFTER_MS) {
+        startAccessPoint();
+      }
+      break;
+
+    case Net::Ap:
+      if (settings::wifiSsid()[0] == '\0') break;
+      if (now - stateSinceMs < WIFI_RETRY_INTERVAL_MS) break;
+      // Retrying tears the access point down, so not while someone is on it.
+      if (WiFi.softAPgetStationNum() > 0) {
+        enterState(Net::Ap);  // reset the timer; try again once they leave
+        break;
+      }
+      startStationAttempt();
+      break;
+  }
 }
 
 }  // namespace
@@ -318,8 +405,17 @@ bool begin() {
   addressText[0] = '\0';
   latest = {0.0f, sound_level::Quality::BelowNoiseFloor};
 
-  accessPointMode = !connectToStoredNetwork();
-  if (accessPointMode && !startAccessPoint()) return false;
+  // Blocking here is fine: nothing else is running yet, and a unit that
+  // reaches its network at boot should be on it before the first frame.
+  if (startStationAttempt()) {
+    while (netState == Net::Connecting) {
+      maintainNetwork();
+      if (netState == Net::Connecting) delay(100);
+    }
+  } else if (!startAccessPoint()) {
+    return false;
+  }
+  if (netState == Net::Ap && addressText[0] == '\0' && !startAccessPoint()) return false;
 
   if (MDNS.begin(WIFI_HOSTNAME)) {
     MDNS.addService("http", "tcp", WEB_SERVER_PORT);
@@ -342,10 +438,6 @@ bool begin() {
   server.onNotFound(handleRoot);
   server.begin();
 
-  const IPAddress ip = accessPointMode ? WiFi.softAPIP() : WiFi.localIP();
-  strncpy(addressText, ip.toString().c_str(), sizeof(addressText) - 1);
-  addressText[sizeof(addressText) - 1] = '\0';
-
   running = true;
   return true;
 }
@@ -353,7 +445,9 @@ bool begin() {
 const char* address() { return addressText; }
 
 void tick() {
-  if (running) server.handleClient();
+  if (!running) return;
+  server.handleClient();
+  maintainNetwork();
 }
 
 void publishLevel(const sound_level::Reading& reading) { latest = reading; }

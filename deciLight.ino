@@ -123,6 +123,10 @@ void loop() {
                                                                             : "");
   }
 
+  // The address can change now that the unit retries its network, so this is
+  // refreshed rather than captured once at boot.
+  display::setStatus(web_control::address());
+
   web_control::publishLevel(reading);
   group_sync::publishLevel(reading.leqDb);
 

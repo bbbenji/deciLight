@@ -185,6 +185,10 @@ void onReceive(const uint8_t* mac, const uint8_t* data, int len) {
 }  // namespace
 
 bool begin() {
+  // Re-entrant on purpose: a station reconnect can land on a different
+  // channel, which invalidates the broadcast peer, so the network layer
+  // calls this again rather than restarting the unit.
+  if (running) esp_now_deinit();
   running = false;
   lastSentMs = 0;
   groupId = hashGroup(settings::groupName());

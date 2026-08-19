@@ -247,6 +247,8 @@ What an inactive lamp shows is configurable: dark like a real traffic signal, or
 
 Zone masks, group name, screen brightness and the inactive level are deliberately *not* shared. They describe a unit's place in the arrangement rather than the room, and copying them would collapse a stack into three identical lights.
 
+A unit retries its stored network in the background, so one that boots before the building's router still ends up on it rather than sitting in access-point fallback until someone power-cycles it. That matters for groups as much as for the web page: access-point mode pins the channel, so a unit that failed to join its network silently drops out of its group too.
+
 **The channel is the thing that breaks this.** ESP-NOW only reaches peers on the same WiFi channel, and in station mode the channel belongs to whichever router the unit joined. Units on the same network are fine; units on different networks will never hear each other however they are configured. `WIFI_AP_CHANNEL` pins the fallback access point so un-networked units still land together. The Group section reports the current channel and the live peer count, because "configured but hearing nobody" is the failure worth diagnosing quickly.
 
 Membership is a convention rather than a secret: the transport is broadcast and the group name is a filter, so anything in radio range running this firmware with the same name joins in.
@@ -274,6 +276,7 @@ Almost everything worth changing is a named constant in `config.h`:
 | `FEATURE_ESPNOW` | Build with or without group synchronisation |
 | `GROUP_BROADCAST_MS`, `GROUP_PEER_TIMEOUT_MS` | How often a unit speaks, and how long a silent peer still counts |
 | `WIFI_AP_CHANNEL` | Channel the fallback access point uses, so un-networked units share one |
+| `WIFI_RETRY_INTERVAL_MS`, `WIFI_FALLBACK_AFTER_MS` | How often a unit in fallback retries its network, and how long a dropped connection is given before falling back |
 | `FIRMWARE_VERSION`, `PRODUCT_NAME` | Shown on the splash screen and logged at boot |
 | `DISPLAY_SPLASH_MS` | How long the splash is held before measurements take the screen |
 | `DISPLAY_ADDRESSES`, `DISPLAY_MIN_INTERVAL_MS` | Which I2C addresses to probe, and the floor on redraw rate |

@@ -241,6 +241,20 @@ constexpr char WIFI_AP_PASSWORD[] = "decilight";
 // access point instead.
 constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 15000;
 
+// A unit that boots faster than the building's router - after a power cut,
+// say - would otherwise sit in access-point fallback until someone power
+// cycled it, unreachable at its usual address and, because access-point mode
+// pins the channel, dropped out of its group as well. So the stored network
+// is retried, but only while nobody is using the fallback access point:
+// tearing it down under someone mid-configuration would be worse than
+// waiting.
+constexpr uint32_t WIFI_RETRY_INTERVAL_MS = 60000;
+
+// How long a dropped station connection is given to come back on its own
+// before falling back to the access point. The core retries by itself; this
+// is the point at which we stop believing it will succeed.
+constexpr uint32_t WIFI_FALLBACK_AFTER_MS = 30000;
+
 constexpr uint16_t WEB_SERVER_PORT = 80;
 
 // -----------------------------------------------------------------------------
