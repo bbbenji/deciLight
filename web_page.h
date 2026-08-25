@@ -74,7 +74,12 @@ color:var(--text);font:inherit;font-size:15px}
 input[type=file]{width:100%;margin-top:8px;color:var(--dim);font-size:13px}
 .bar{height:6px;border-radius:3px;background:#242835;margin-top:12px;overflow:hidden}
 .bar i{display:block;height:100%;width:0;background:#5b8cff;transition:width .2s}
-#otanote,#testnote,#irnote,#scrnote,#gnote{color:var(--dim);font-size:13px;margin-top:10px}
+#otanote,#testnote,#irnote,#scrnote,#gnote,#roster,#cover{color:var(--dim);font-size:13px;margin-top:10px}
+#roster table{width:100%;border-collapse:collapse;margin-top:6px}
+#roster td{padding:3px 0;font-variant-numeric:tabular-nums}
+#roster td.n{color:var(--text)}
+#roster td.r{text-align:right}
+#cover.warn{color:var(--warn)}
 label input[type=checkbox]{margin-right:8px;accent-color:#5b8cff}
 #testnote.live{color:var(--text);font-weight:600}
 #irnote b{color:var(--text);font-variant-numeric:tabular-nums}
@@ -115,6 +120,8 @@ label input[type=checkbox]{margin-right:8px;accent-color:#5b8cff}
       <summary>Group</summary>
       <input type="text" id="gname" placeholder="Group name (blank = work alone)"
              autocapitalize="off" autocorrect="off" maxlength="16">
+      <input type="text" id="uname" placeholder="This unit's name" maxlength="8"
+             autocapitalize="off" autocorrect="off">
       <div class="row" style="margin-top:12px"><button id="gsave">Save and restart</button></div>
       <label style="margin-top:16px"><input type="checkbox" id="glevel"> Follow the group's level</label>
       <label>This unit lights for</label>
@@ -131,6 +138,8 @@ label input[type=checkbox]{margin-right:8px;accent-color:#5b8cff}
       <label>Inactive lamp <b><span id="vinact"></span></b></label>
       <input type="range" id="sinact" min="0" max="255">
       <div id="gnote"></div>
+      <div id="roster"></div>
+      <div id="cover"></div>
     </details>
 
     <details class="sub">
@@ -253,6 +262,7 @@ function render(s){
   }
   $("irnote").innerHTML=irLine(s);
   renderGroup(s);
+  renderRoster(s);
   $("net").textContent=s.name+" "+s.version+" \u00b7 "+(s.net=="ap"
     ? "Access point "+s.ssid
     : "Connected to "+s.ssid)+" \u00b7 "+s.ip;
@@ -263,7 +273,8 @@ $("testgo").onclick=function(){ post("/api/test",""); };
 var ZQ=1, ZW=2, ZL=4, zoneBits=7;
 function postGroup(extra){ post("/api/group",extra); }
 $("gsave").onclick=function(){
-  postGroup("group="+encodeURIComponent($("gname").value));
+  postGroup("group="+encodeURIComponent($("gname").value)+
+            "&unit="+encodeURIComponent($("uname").value));
   $("gnote").textContent="Saving and restarting...";
 };
 $("glevel").onchange=function(){ postGroup("groupLevel="+(this.checked?1:0)); };
@@ -278,8 +289,45 @@ $("sinact").addEventListener("change",function(){
   postGroup("inactiveLevel="+this.value);
 });
 
+var ZONE_NAMES=["quiet","warn","loud"];
+function missingZones(mask){
+  var out=[];
+  for(var i=0;i<3;i++) if(!(mask&(1<<i))) out.push(ZONE_NAMES[i]);
+  return out;
+}
+function listedZones(mask){
+  var out=[];
+  for(var i=0;i<3;i++) if(mask&(1<<i)) out.push(ZONE_NAMES[i]);
+  return out.length==3?"all":(out.join("+")||"none");
+}
+
+function renderRoster(s){
+  var rows="";
+  (s.roster||[]).forEach(function(p){
+    var age=p.ageMs<1500?"":" <span style=\"opacity:.6\">"+Math.round(p.ageMs/1000)+"s</span>";
+    rows+="<tr><td class=n>"+p.name+"</td><td>"+listedZones(p.zones)+
+          "</td><td class=r>"+p.db.toFixed(1)+age+"</td></tr>";
+  });
+  $("roster").innerHTML = rows
+    ? "<table><tr><td class=n>"+s.unit+" (this one)</td><td>"+listedZones(s.zones)+
+      "</td><td class=r>"+s.db.toFixed(1)+"</td></tr>"+rows+"</table>"
+    : "";
+
+  // A gap leaves a band unlit and an overlap lights two lamps at once; both
+  // look like faults rather than settings.
+  var c=$("cover");
+  if(!s.groupLevel || !s.roster || !s.roster.length){ c.textContent=""; c.className=""; return; }
+  var gaps=missingZones(s.coverage), dbl=listedZones(s.overlap);
+  var msg=[];
+  if(gaps.length) msg.push("nothing in the group lights for "+gaps.join(" or "));
+  if(s.overlap) msg.push("more than one unit lights for "+dbl);
+  c.textContent=msg.join("; ");
+  c.className=msg.length?"warn":"";
+}
+
 function renderGroup(s){
   if(document.activeElement!=$("gname")) $("gname").value=s.group||"";
+  if(document.activeElement!=$("uname")) $("uname").value=s.unit||"";
   $("glevel").checked=!!s.groupLevel;
   zoneBits=s.zones;
   $("zq").className=(s.zones&ZQ)?"zone on":"zone";

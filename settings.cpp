@@ -16,6 +16,7 @@ constexpr char kKeyDbMax[]   = "dB_max";
 constexpr char kKeyBright[]  = "bright";
 constexpr char kKeyScreen[]  = "screen_bri";
 constexpr char kKeyGroup[]   = "group";
+constexpr char kKeyUnit[]    = "unit";
 constexpr char kKeyGrpLevel[] = "grp_level";
 constexpr char kKeyZones[]   = "zones";
 constexpr char kKeyCombine[] = "combine";
@@ -36,6 +37,8 @@ char wifiPassBuf[64] = {0};
 // the field-by-field equality the numeric settings use.
 char groupNameBuf[17] = {0};
 char groupNameStored[17] = {0};
+char unitNameBuf[GROUP_NAME_MAX + 1] = {0};
+char unitNameStored[GROUP_NAME_MAX + 1] = {0};
 
 Settings current;
 Settings stored;
@@ -71,6 +74,10 @@ void writeNow() {
     prefs.putString(kKeyGroup, groupNameBuf);
     strncpy(groupNameStored, groupNameBuf, sizeof(groupNameStored) - 1);
   }
+  if (strcmp(unitNameBuf, unitNameStored) != 0) {
+    prefs.putString(kKeyUnit, unitNameBuf);
+    strncpy(unitNameStored, unitNameBuf, sizeof(unitNameStored) - 1);
+  }
 
   stored = current;
   dirty = false;
@@ -90,6 +97,8 @@ void begin() {
   wifiPassBuf[0] = '\0';
   groupNameBuf[0] = '\0';
   groupNameStored[0] = '\0';
+  unitNameBuf[0] = '\0';
+  unitNameStored[0] = '\0';
 
   // Opened once and left open; closing and reopening per access costs several
   // milliseconds and gains nothing.
@@ -133,6 +142,8 @@ void begin() {
   prefs.getString(kKeyPass, wifiPassBuf, sizeof(wifiPassBuf));
   prefs.getString(kKeyGroup, groupNameBuf, sizeof(groupNameBuf));
   strncpy(groupNameStored, groupNameBuf, sizeof(groupNameStored) - 1);
+  prefs.getString(kKeyUnit, unitNameBuf, sizeof(unitNameBuf));
+  strncpy(unitNameStored, unitNameBuf, sizeof(unitNameStored) - 1);
 
   stored = current;
   dirty = false;
@@ -197,6 +208,14 @@ void setInactiveLevel(int value) {
 }
 
 const char* groupName() { return groupNameBuf; }
+
+const char* unitName() { return unitNameBuf; }
+
+void setUnitName(const char* name) {
+  strncpy(unitNameBuf, name ? name : "", sizeof(unitNameBuf) - 1);
+  unitNameBuf[sizeof(unitNameBuf) - 1] = '\0';
+  markDirty();
+}
 
 void setGroupName(const char* name) {
   strncpy(groupNameBuf, name ? name : "", sizeof(groupNameBuf) - 1);

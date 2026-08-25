@@ -192,6 +192,112 @@ void test_group_sync() {
   group_sync::tick();
   CHECK(signal_light::selfTestRunning(), "the group self test did not start");
 
+  CASE("a unit without a name falls back to its MAC suffix");
+  startGroup("classroom");
+  CHECK(strlen(group_sync::localName()) > 0, "no name at all");
+  CHECK(strcmp(group_sync::localName(), "ABCD") == 0, "MAC fallback gave '%s', want ABCD",
+        group_sync::localName());
+
+  CASE("a configured name is used instead");
+  fakes::reset();
+  settings::begin();
+  settings::setUnitName("top");
+  settings::setGroupName("classroom");
+  group_sync::begin();
+  CHECK(strcmp(group_sync::localName(), "top") == 0, "name is '%s', want top",
+        group_sync::localName());
+
+  CASE("the roster reports each peer by name and level");
+  startGroup("classroom");
+  settings::setUnitName("alpha");
+  group_sync::begin();
+  fakes::advanceMillis(GROUP_BROADCAST_MS + 1);
+  CHECK(captureLevel(63.0f), "setup failed");
+  fakes::deliverGroupPacket(kPeerA, packet, packetLen);
+
+  group_sync::PeerInfo list[GROUP_MAX_PEERS];
+  uint8_t n = group_sync::peerList(list, GROUP_MAX_PEERS);
+  CHECK(n == 1, "roster has %u entries, want 1", n);
+  CHECK(strcmp(list[0].name, "alpha") == 0, "roster name '%s', want alpha", list[0].name);
+  CHECK(list[0].levelDb > 62.0f && list[0].levelDb < 64.0f, "roster level %.1f, want 63",
+        list[0].levelDb);
+
+  // A stack with a gap leaves a band unlit; one with an overlap lights two
+  // lamps at once. Both look like faults rather than misconfiguration.
+  CASE("zone gaps and overlaps across the group are detectable");
+  startGroup("classroom");
+  settings::setGroupLevel(true);
+
+  settings::setZones(ZONE_MASK_QUIET);
+  fakes::advanceMillis(GROUP_BROADCAST_MS + 1);
+  CHECK(captureLevel(50.0f), "setup failed");
+  fakes::deliverGroupPacket(kPeerA, packet, packetLen);
+
+  settings::setZones(ZONE_MASK_WARN);
+  fakes::advanceMillis(GROUP_BROADCAST_MS + 1);
+  CHECK(captureLevel(50.0f), "setup failed");
+  fakes::deliverGroupPacket(kPeerB, packet, packetLen);
+
+  // Ours is warn, peer A is quiet, peer B is warn: nothing covers loud, and
+  // warn is covered twice.
+  CHECK((group_sync::zoneCoverage() & ZONE_MASK_LOUD) == 0, "loud reported as covered");
+  CHECK((group_sync::zoneCoverage() & ZONE_MASK_QUIET) != 0, "quiet reported as uncovered");
+  CHECK((group_sync::zoneOverlap() & ZONE_MASK_WARN) != 0, "the warn overlap went unnoticed");
+  CHECK((group_sync::zoneOverlap() & ZONE_MASK_QUIET) == 0, "quiet wrongly flagged as doubled");
+
+  CASE("a unit running independently is left out of coverage");
+  startGroup("classroom");
+  settings::setGroupLevel(false);
+  settings::setZones(ZONE_MASK_ALL);
+  CHECK(group_sync::zoneCoverage() == 0, "an independent unit counted towards the stack");
+
+  // Group-wide, unlike zones: two units disagreeing about it would quietly
+  // show different colours from the same readings.
+  CASE("the combine rule travels with the settings");
+  startGroup("classroom");
+  settings::setCombine(COMBINE_AVERAGE);
+  CHECK(capture(group_sync::publishSettings), "no settings message was sent");
+  settings::setCombine(COMBINE_LOUDEST);
+  fakes::deliverGroupPacket(kPeerA, packet, packetLen);
+  group_sync::tick();
+  CHECK(settings::get().combine == COMBINE_AVERAGE, "combine did not transfer: %u",
+        settings::get().combine);
+
+  // Broadcast is unacknowledged, so a one-shot command would be lost with the
+  // packet that carried it.
+  CASE("commands are repeated, paced rather than blocking");
+  startGroup("classroom");
+  int sent = fakes::groupPacketsSent();
+  settings::setDbMin(47);
+  group_sync::publishSettings();
+  CHECK(fakes::groupPacketsSent() == sent + 1, "the first copy did not go out immediately");
+  group_sync::tick();
+  CHECK(fakes::groupPacketsSent() == sent + 1, "a repeat went out before its gap elapsed");
+  for (int i = 1; i < GROUP_COMMAND_REPEATS; i++) {
+    fakes::advanceMillis(GROUP_COMMAND_GAP_MS + 1);
+    group_sync::tick();
+  }
+  CHECK(fakes::groupPacketsSent() == sent + GROUP_COMMAND_REPEATS,
+        "%d copies sent, want %u", fakes::groupPacketsSent() - sent, GROUP_COMMAND_REPEATS);
+
+  CASE("repeated self tests do not restart a running sequence");
+  startGroup("classroom");
+  CHECK(capture(group_sync::publishSelfTest), "setup failed");
+  fakes::deliverGroupPacket(kPeerA, packet, packetLen);
+  group_sync::tick();
+  signal_light::tick();
+  CHECK(signal_light::selfTestRunning(), "the test did not start");
+  const char* first = signal_light::selfTestLabel();
+  fakes::advanceMillis(1500);
+  signal_light::tick();
+  CHECK(strcmp(signal_light::selfTestLabel(), first) != 0, "the sequence did not advance");
+  // The repeats arrive while it is already running.
+  fakes::deliverGroupPacket(kPeerA, packet, packetLen);
+  group_sync::tick();
+  signal_light::tick();
+  CHECK(strcmp(signal_light::selfTestLabel(), first) != 0,
+        "a repeated command restarted the sequence");
+
   CASE("the radio channel is reported for diagnosis");
   startGroup("classroom");
   fakes::setChannel(6);

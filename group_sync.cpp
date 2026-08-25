@@ -38,11 +38,18 @@ struct __attribute__((packed)) Message {
   union {
     struct {
       int16_t centiDb;
+      uint8_t zones;      // what the sender lights for
+      uint8_t follows;    // whether the sender tracks the group at all
+      char name[GROUP_NAME_MAX + 1];
     } level;
     struct {
       uint8_t dbMin;
       uint8_t dbMax;
       uint8_t brightness;
+      // Group-wide, unlike zones: it decides how the group's readings become
+      // one number, and two units disagreeing about it would quietly show
+      // different colours.
+      uint8_t combine;
     } settings;
     struct {
       uint8_t mode;  // signal_light::Mode
@@ -54,6 +61,9 @@ struct __attribute__((packed)) Message {
 struct Peer {
   uint8_t mac[6];
   float levelDb;
+  uint8_t zones;
+  bool followsGroup;
+  char name[GROUP_NAME_MAX + 1];
   uint32_t heardMs;
   bool used;
 };
@@ -70,12 +80,22 @@ uint32_t lastSentMs = 0;
 // is deliberately not load-bearing today, and a test cannot reach it.
 bool applyingRemote = false;
 
+// This unit's label on the air, filled in at begin().
+char localNameBuf[GROUP_NAME_MAX + 1] = {0};
+
+// Commands are repeated a few times because broadcast is unacknowledged. The
+// repeats are paced by tick() rather than a delay, so a held remote key
+// cannot stall the loop.
+Message repeatMsg;
+uint8_t repeatsLeft = 0;
+uint32_t nextRepeatMs = 0;
+
 // Commands land here from the radio callback and are applied by tick() on the
 // main thread. Only the most recent of each kind is kept: they are absolute
 // states, not increments, so an older one has nothing to contribute.
 struct Inbox {
   bool haveSettings;
-  uint8_t dbMin, dbMax, brightness;
+  uint8_t dbMin, dbMax, brightness, combine;
   bool haveMode;
   uint8_t mode;
   uint32_t color;
@@ -115,8 +135,20 @@ bool fill(Message& msg, uint8_t type) {
   return true;
 }
 
-void send(const Message& msg) {
+void transmit(const Message& msg) {
   esp_now_send(kBroadcast, reinterpret_cast<const uint8_t*>(&msg), sizeof(msg));
+}
+
+// One copy now; the rest are paced out by tick(). A newer command replaces
+// any still-pending repeats, since both carry absolute state and the older
+// one has nothing left to say.
+void send(const Message& msg, uint8_t repeats = 1) {
+  transmit(msg);
+  if (repeats > 1) {
+    repeatMsg = msg;
+    repeatsLeft = repeats - 1;
+    nextRepeatMs = millis() + GROUP_COMMAND_GAP_MS;
+  }
 }
 
 void onReceive(const uint8_t* mac, const uint8_t* data, int len) {
@@ -138,6 +170,7 @@ void onReceive(const uint8_t* mac, const uint8_t* data, int len) {
         inbox.dbMin = msg.body.settings.dbMin;
         inbox.dbMax = msg.body.settings.dbMax;
         inbox.brightness = msg.body.settings.brightness;
+        inbox.combine = msg.body.settings.combine;
         inbox.haveSettings = true;
         break;
       case MSG_MODE:
@@ -176,6 +209,10 @@ void onReceive(const uint8_t* mac, const uint8_t* data, int len) {
   if (slot >= 0) {
     memcpy(peers[slot].mac, mac, 6);
     peers[slot].levelDb = level;
+    peers[slot].zones = msg.body.level.zones;
+    peers[slot].followsGroup = msg.body.level.follows != 0;
+    memcpy(peers[slot].name, msg.body.level.name, GROUP_NAME_MAX);
+    peers[slot].name[GROUP_NAME_MAX] = '\0';
     peers[slot].heardMs = now;
     peers[slot].used = true;
   }
@@ -193,6 +230,15 @@ bool begin() {
   lastSentMs = 0;
   groupId = hashGroup(settings::groupName());
   memset(peers, 0, sizeof(peers));
+  repeatsLeft = 0;
+
+  strncpy(localNameBuf, settings::unitName(), GROUP_NAME_MAX);
+  localNameBuf[GROUP_NAME_MAX] = '\0';
+  if (localNameBuf[0] == '\0') {
+    uint8_t mac[6] = {0};
+    WiFi.macAddress(mac);
+    snprintf(localNameBuf, sizeof(localNameBuf), "%02X%02X", mac[4], mac[5]);
+  }
 
   if (settings::groupName()[0] == '\0') {
     Serial.println(F("group: no group name set, working alone"));
@@ -244,6 +290,51 @@ uint8_t peerCount() {
   return n;
 }
 
+const char* localName() { return localNameBuf; }
+
+uint8_t peerList(PeerInfo* out, uint8_t max) {
+  uint8_t n = 0;
+  portENTER_CRITICAL(&peerLock);
+  const uint32_t now = millis();
+  for (int i = 0; i < GROUP_MAX_PEERS && n < max; i++) {
+    if (!peers[i].used) continue;
+    memcpy(out[n].name, peers[i].name, sizeof(out[n].name));
+    out[n].levelDb = peers[i].levelDb;
+    out[n].zones = peers[i].zones;
+    out[n].followsGroup = peers[i].followsGroup;
+    out[n].ageMs = now - peers[i].heardMs;
+    n++;
+  }
+  portEXIT_CRITICAL(&peerLock);
+  return n;
+}
+
+// Only units that actually follow the group count towards coverage: one
+// deliberately running independently is not part of the arrangement, and
+// counting it would report overlaps that do not matter.
+uint8_t zoneCoverage() {
+  uint8_t covered = settings::get().groupLevel ? settings::get().zones : 0;
+  portENTER_CRITICAL(&peerLock);
+  for (int i = 0; i < GROUP_MAX_PEERS; i++) {
+    if (peers[i].used && peers[i].followsGroup) covered |= peers[i].zones;
+  }
+  portEXIT_CRITICAL(&peerLock);
+  return covered;
+}
+
+uint8_t zoneOverlap() {
+  uint8_t seen = settings::get().groupLevel ? settings::get().zones : 0;
+  uint8_t twice = 0;
+  portENTER_CRITICAL(&peerLock);
+  for (int i = 0; i < GROUP_MAX_PEERS; i++) {
+    if (!peers[i].used || !peers[i].followsGroup) continue;
+    twice |= seen & peers[i].zones;
+    seen |= peers[i].zones;
+  }
+  portEXIT_CRITICAL(&peerLock);
+  return twice;
+}
+
 uint32_t lastHeardMs() {
   uint32_t newest = 0;
   bool any = false;
@@ -267,6 +358,10 @@ void publishLevel(float leqDb) {
   lastSentMs = millis();
   msg.group = groupId;
   msg.body.level.centiDb = int16_t(leqDb * 100.0f);
+  msg.body.level.zones = settings::get().zones;
+  msg.body.level.follows = settings::get().groupLevel ? 1 : 0;
+  strncpy(msg.body.level.name, localNameBuf, GROUP_NAME_MAX);
+  msg.body.level.name[GROUP_NAME_MAX] = '\0';
   send(msg);
 }
 
@@ -277,7 +372,8 @@ void publishSettings() {
   msg.body.settings.dbMin = s.dbMin;
   msg.body.settings.dbMax = s.dbMax;
   msg.body.settings.brightness = s.brightness;
-  send(msg);
+  msg.body.settings.combine = s.combine;
+  send(msg, GROUP_COMMAND_REPEATS);
 }
 
 void publishMode() {
@@ -288,13 +384,13 @@ void publishMode() {
   msg.body.mode.r = (rgb >> 16) & 0xFF;
   msg.body.mode.g = (rgb >> 8) & 0xFF;
   msg.body.mode.b = rgb & 0xFF;
-  send(msg);
+  send(msg, GROUP_COMMAND_REPEATS);
 }
 
 void publishSelfTest() {
   Message msg;
   if (!fill(msg, MSG_SELF_TEST)) return;
-  send(msg);
+  send(msg, GROUP_COMMAND_REPEATS);
 }
 
 float groupLevel(float ownDb, uint8_t combine) {
@@ -322,6 +418,13 @@ void tick() {
   if (!running) return;
   const uint32_t now = millis();
 
+  // Pace out any pending command repeats.
+  if (repeatsLeft > 0 && int32_t(now - nextRepeatMs) >= 0) {
+    transmit(repeatMsg);
+    repeatsLeft--;
+    nextRepeatMs = now + GROUP_COMMAND_GAP_MS;
+  }
+
   portENTER_CRITICAL(&peerLock);
   for (int i = 0; i < GROUP_MAX_PEERS; i++) {
     // Unsigned arithmetic, so this survives the millis() rollover.
@@ -339,6 +442,7 @@ void tick() {
     settings::setDbMin(pending.dbMin);
     settings::setDbMax(pending.dbMax);
     settings::setBrightness(pending.brightness);
+    settings::setCombine(pending.combine);
     signal_light::setBrightness(settings::get().brightness);
   }
   if (pending.haveMode) {
@@ -348,7 +452,9 @@ void tick() {
       default:                         signal_light::setMode(signal_light::Mode::Auto); break;
     }
   }
-  if (pending.haveSelfTest) signal_light::startSelfTest();
+  // Guarded because commands are repeated: restarting a running test would
+  // show as the sequence stuttering.
+  if (pending.haveSelfTest && !signal_light::selfTestRunning()) signal_light::startSelfTest();
 
   applyingRemote = false;
 }

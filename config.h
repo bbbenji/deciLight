@@ -295,7 +295,21 @@ constexpr uint8_t GROUP_MAX_PEERS = 8;
 // Bumped only when the wire format changes incompatibly. Messages carrying
 // anything else are ignored, so a half-updated group degrades to units
 // working alone rather than to nonsense.
-constexpr uint8_t GROUP_PROTOCOL_VERSION = 2;
+constexpr uint8_t GROUP_PROTOCOL_VERSION = 3;
+
+// A short label so units can be told apart in a group. Left empty it falls
+// back to the last bytes of the unit's MAC, which is ugly but unique - the
+// point is that a roster is readable without configuring anything first.
+constexpr uint8_t GROUP_NAME_MAX = 8;
+
+// Broadcast is unacknowledged. Level messages heal themselves, since another
+// arrives a quarter of a second later, but a settings or mode change is a
+// one-off: a single lost packet would leave one unit on the old value
+// indefinitely. Sending each a few times makes that very unlikely, and costs
+// nothing since commands are rare. Repeats are spaced out by tick() rather
+// than with a delay, so holding a remote key cannot stall the loop.
+constexpr uint8_t GROUP_COMMAND_REPEATS = 3;
+constexpr uint32_t GROUP_COMMAND_GAP_MS = 40;
 
 // -----------------------------------------------------------------------------
 // Over-the-air updates

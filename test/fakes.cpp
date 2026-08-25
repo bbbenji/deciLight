@@ -227,6 +227,12 @@ void Adafruit_SSD1306::drawFastHLine(int16_t, int16_t, int16_t, uint16_t) {}
 
 int WiFiClass::getMode() { return wifiMode; }
 
+uint8_t* WiFiClass::macAddress(uint8_t* mac) {
+  static const uint8_t kFake[6] = {0x02, 0, 0, 0, 0xAB, 0xCD};
+  if (mac) memcpy(mac, kFake, 6);
+  return mac;
+}
+
 esp_err_t esp_wifi_get_channel(uint8_t* primary, wifi_second_chan_t* second) {
   if (primary) *primary = radioChannel;
   if (second) *second = 0;

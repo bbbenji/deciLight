@@ -27,6 +27,16 @@
 
 namespace group_sync {
 
+// A live peer, for the group roster. Declared outside the feature guard
+// because callers size an array of it whether or not the radio is compiled in.
+struct PeerInfo {
+  char name[GROUP_NAME_MAX + 1];
+  float levelDb;
+  uint8_t zones;     // ZONE_MASK_* bits that peer lights for
+  bool followsGroup; // whether its light tracks the group at all
+  uint32_t ageMs;
+};
+
 #if FEATURE_ESPNOW
 
 // Brings up ESP-NOW on the interface WiFi is already using. Must be called
@@ -43,6 +53,20 @@ uint8_t channel();
 
 // Peers heard from within GROUP_PEER_TIMEOUT_MS, excluding this unit.
 uint8_t peerCount();
+
+// Fills up to max entries, returns how many were written.
+uint8_t peerList(PeerInfo* out, uint8_t max);
+
+// The name this unit answers to on the air, which falls back to a MAC suffix
+// when none has been set.
+const char* localName();
+
+// Zone bits covered by this unit and every live peer that follows the group,
+// and the bits covered by more than one of them. A stack with a gap shows a
+// band as unlit; one with an overlap lights two lamps at once. Both look like
+// faults rather than misconfiguration, so the interface warns about them.
+uint8_t zoneCoverage();
+uint8_t zoneOverlap();
 
 // Age in milliseconds of the most recently heard peer, or 0 when there are
 // none. For a "last heard" readout.
@@ -91,6 +115,10 @@ inline void publishMode() {}
 inline void publishSelfTest() {}
 inline float groupLevel(float ownDb, uint8_t) { return ownDb; }
 inline void tick() {}
+inline uint8_t peerList(PeerInfo*, uint8_t) { return 0; }
+inline const char* localName() { return ""; }
+inline uint8_t zoneCoverage() { return 0; }
+inline uint8_t zoneOverlap() { return 0; }
 
 #endif  // FEATURE_ESPNOW
 

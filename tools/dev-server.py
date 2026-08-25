@@ -91,6 +91,7 @@ class Device:
         # Simulated peers, so the group readout can be built without a second
         # board. Count is settable through the non-firmware /api/peers hook.
         self.peers = 0
+        self.unit = ""
         self.mode = "auto"
         self.color = "%06X" % int(CFG["COLOR_QUIET"])
         self.zone = "unknown"
@@ -180,6 +181,17 @@ class Device:
             "peers": self.peers if self.group else 0,
             "channel": 1 if self.group else 0,
             "groupActive": bool(self.group),
+            "unit": self.unit or "AB12",
+            "coverage": self.zones if self.group_level else 0,
+            "overlap": 0,
+            # Simulated roster entries so the group readout can be laid out
+            # without a second board on the bench.
+            "roster": [
+                {"name": f"peer{i+1}", "db": round(50.0 + 7 * i, 1),
+                 "zones": int(CFG["ZONE_MASK_ALL"]), "follows": True,
+                 "ageMs": 200 * (i + 1)}
+                for i in range(self.peers if self.group else 0)
+            ],
             "net": "ap",
             "ssid": "deciLight (dev server)",
             "ip": "127.0.0.1",
@@ -264,6 +276,8 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/group":
             if "group" in args:
                 self.device.group = args["group"][0][:16]
+            if "unit" in args:
+                self.device.unit = args["unit"][0][:int(CFG["GROUP_NAME_MAX"])]
             if "groupLevel" in args:
                 self.device.group_level = args["groupLevel"][0] != "0"
             if "zones" in args:
@@ -334,8 +348,8 @@ def check_contract() -> int:
     # than from a hand-written copy of it. A hand-written copy is exactly how
     # a stray quote once survived review: the transcription silently fixed it.
     APPENDERS = {"appendStr": '"x"', "appendInt": "1", "appendBool": "true",
-                 "appendFixed": "1.0"}
-    fields = re.findall(r'append(Str|Int|Bool|Fixed)\(out,\s*"(\w+)"', body)
+                 "appendFixed": "1.0", "appendRaw": "[]"}
+    fields = re.findall(r'append(Str|Int|Bool|Fixed|Raw)\(out,\s*"(\w+)"', body)
     assembled = "{" + ",".join(
         f'"{name}":{APPENDERS["append" + kind]}' for kind, name in fields
     ) + "}"
@@ -349,7 +363,9 @@ def check_contract() -> int:
     # Any hand-rolled fragment defeats the appenders' guarantee that each
     # value closes its own quoting, so the style is enforced rather than
     # merely encouraged. The braces are appended as chars, not strings.
-    raw = re.findall(r'out \+= "(?:[^"\\]|\\.)*"', body)
+    # Any variable, not just one literally called "out": the roster is
+    # assembled in locals, and hand-quoting there is just as wrong.
+    raw = re.findall(r'\w+ \+= "(?:[^"\\]|\\.)*"', body)
     if raw:
         print("  sendState() builds JSON by hand instead of using the appenders:")
         for fragment in raw:

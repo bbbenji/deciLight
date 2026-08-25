@@ -15,6 +15,7 @@
 class WiFiClass {
  public:
   int getMode();
+  uint8_t* macAddress(uint8_t* mac);
 };
 extern WiFiClass WiFi;
 

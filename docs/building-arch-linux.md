@@ -162,9 +162,36 @@ convenience rather than a requirement.
 | `ModuleNotFoundError: No module named 'serial'` | `python-pyserial` is not installed. Compiling works without it, uploading does not |
 | `text section exceeds available space in board` | Almost certainly FastLED 3.10.x. Reinstall the pin: `arduino-cli lib install FastLED@3.9.20` |
 | `Could not open /dev/ttyUSB0, the port doesn't exist` | Board not plugged in, a power-only USB cable, or the serial monitor still has the port open |
-| No `/dev/ttyUSB*` on plug-in | Watch `sudo dmesg -w` while replugging. If the device enumerates and then vanishes a second later, something else has claimed it - see the two notes below |
+| No `/dev/ttyUSB*` on plug-in, but `lsusb` shows the bridge | Almost always a kernel upgrade you have not rebooted into; see below. Check with `ls /usr/lib/modules/` against `uname -r` |
+| No `/dev/ttyUSB*` and nothing in `lsusb` | Board not plugged in, or a power-only USB cable. Watch `sudo dmesg -w` while replugging |
 | Upload starts then fails partway | Drop the speed: `--build-property upload.speed=115200` |
 | `Failed to connect to ESP32: Timed out waiting for packet header` | Hold **BOOT**, tap **EN/RST**, release **BOOT**, retry |
+
+### A kernel upgrade you have not rebooted into
+
+This one deserves to be checked first, because the symptom points nowhere near
+the cause. The board enumerates - `lsusb` shows the bridge - but no
+`/dev/ttyUSB*` appears and `modprobe cp210x` reports the module does not
+exist.
+
+Upgrading `linux-cachyos` (or `linux`) removes the module tree of the kernel
+you are still running. Any driver that was not already loaded at the moment of
+the upgrade can no longer be loaded at all, and USB-serial adapters are the
+usual way people find out. Compare the two:
+
+```sh
+uname -r                  # the kernel you are running
+ls /usr/lib/modules/      # the trees that actually exist
+```
+
+If the running kernel is not in that list, reboot. Nothing else will fix it -
+the module file has been deleted.
+
+The same check as a one-liner:
+
+```sh
+[ -d "/usr/lib/modules/$(uname -r)" ] && echo "modules present" || echo "REBOOT: no module tree for $(uname -r)"
+```
 
 ### brltty
 

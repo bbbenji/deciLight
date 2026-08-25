@@ -109,6 +109,14 @@ void appendFixed(String& out, const char* key, float value, int decimals) {
   out += String(value, decimals);
 }
 
+// For a value that is itself a JSON document - the peer roster is an array of
+// objects, each assembled with these same appenders, so nothing anywhere is
+// quoted by hand.
+void appendRaw(String& out, const char* key, const String& value) {
+  appendKey(out, key);
+  out += value;
+}
+
 void sendState() {
   const Settings& s = settings::get();
   const String ssid = accessPointMode ? String(WIFI_AP_SSID) : WiFi.SSID();
@@ -142,6 +150,33 @@ void sendState() {
   appendInt(out, "peers", group_sync::peerCount());
   appendInt(out, "channel", group_sync::channel());
   appendBool(out, "groupActive", group_sync::active());
+  appendStr(out, "unit", group_sync::localName());
+  appendInt(out, "coverage", group_sync::zoneCoverage());
+  appendInt(out, "overlap", group_sync::zoneOverlap());
+
+  // The roster is the one array in the document. Each entry is built with
+  // the same appenders, starting from its own opening brace, so appendKey's
+  // comma handling works inside it unchanged.
+  group_sync::PeerInfo peers[GROUP_MAX_PEERS];
+  const uint8_t n = group_sync::peerList(peers, GROUP_MAX_PEERS);
+
+  String roster;
+  roster.reserve(32 + n * 64);
+  roster += '[';
+  for (uint8_t i = 0; i < n; i++) {
+    if (i) roster += ',';
+    String entry;
+    entry += '{';
+    appendStr(entry, "name", peers[i].name);
+    appendFixed(entry, "db", peers[i].levelDb, 1);
+    appendInt(entry, "zones", peers[i].zones);
+    appendBool(entry, "follows", peers[i].followsGroup);
+    appendInt(entry, "ageMs", peers[i].ageMs);
+    entry += '}';
+    roster += entry;
+  }
+  roster += ']';
+  appendRaw(out, "roster", roster);
   appendStr(out, "net", accessPointMode ? "ap" : "sta");
   appendStr(out, "ssid", ssid.c_str());
   appendStr(out, "ip", ip.toString().c_str());
@@ -208,8 +243,14 @@ void handleGroup() {
   if (server.hasArg("groupLevel")) {
     settings::setGroupLevel(server.arg("groupLevel").toInt() != 0);
   }
+  if (server.hasArg("unit")) settings::setUnitName(server.arg("unit").c_str());
   if (server.hasArg("zones")) settings::setZones(server.arg("zones").toInt());
-  if (server.hasArg("combine")) settings::setCombine(server.arg("combine").toInt());
+  if (server.hasArg("combine")) {
+    settings::setCombine(server.arg("combine").toInt());
+    // Group-wide, so the rest of the group is told rather than left to
+    // disagree about how readings are combined.
+    group_sync::publishSettings();
+  }
   if (server.hasArg("inactiveLevel")) {
     settings::setInactiveLevel(server.arg("inactiveLevel").toInt());
   }

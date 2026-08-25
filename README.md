@@ -131,7 +131,7 @@ Behind the page is a small HTTP API, if you would rather script it:
 | `POST /api/set` | `dbMin`, `dbMax`, `brightness`, `displayBrightness` - any subset |
 | `POST /api/mode` | `mode=auto`, `mode=off`, or `mode=manual&color=RRGGBB` |
 | `POST /api/test` | Runs the LED self test, on the whole group |
-| `POST /api/group` | `group`, `groupLevel`, `zones`, `combine`, `inactiveLevel` - any subset. Changing the name restarts the unit |
+| `POST /api/group` | `group`, `unit`, `groupLevel`, `zones`, `combine`, `inactiveLevel` - any subset. Changing the group name restarts the unit |
 | `POST /api/wifi` | `ssid`, `pass` - saved to flash, then the unit restarts |
 | `POST /api/update` | Multipart firmware upload. Requires HTTP basic auth, and is refused entirely unless `OTA_PASSWORD` is set |
 
@@ -239,13 +239,19 @@ Three per-unit settings compose into every arrangement:
 | --- | --- |
 | Follow the group's level | Light from the group's reading rather than this unit's own microphone |
 | Zones | Which of quiet, warn and loud this unit lights for. All three by default, which is how a lone light behaves |
-| Combine | Whether the group's level is the loudest reading or the average of them |
+| Combine | Whether the group's level is the loudest reading or the average of them. Shared across the group, unlike the two above - two units disagreeing about it would quietly show different colours from the same readings |
 
 A **traffic-light stack** is three units with follow-group on, one zone each, and combine set to average - they hear the same sound, so averaging cancels per-microphone variation. Exactly one lamp is lit at a time, like a real signal. A **mirrored room** is all three zones on every unit with combine set to loudest, so any noisy corner turns the whole room red. A unit with follow-group off ignores the others entirely. Two units make a stack too, with one of them covering a pair of zones so there is no dead band.
 
 What an inactive lamp shows is configurable: dark like a real traffic signal, or a faint glow so the stack still reads as one and a dead unit is distinguishable from an unlit one.
 
 Zone masks, group name, screen brightness and the inactive level are deliberately *not* shared. They describe a unit's place in the arrangement rather than the room, and copying them would collapse a stack into three identical lights.
+
+Each unit carries a short name, which the Group section shows alongside every peer it can hear and the level that peer is reporting. An anonymous peer count is hard to act on; a roster makes a deaf or dead unit obvious. Units with no name set fall back to the last bytes of their MAC, so a roster is readable before anything is configured.
+
+The same readout warns when the arrangement does not add up. A stack where nothing covers the middle band leaves it unlit; one where two units both claim `loud` lights two lamps at once. Both look like faults rather than settings, so the page says which zones are uncovered or doubled.
+
+Settings, mode and self-test messages are each sent a few times. Broadcast is unacknowledged, and unlike the level - which another message replaces a quarter of a second later - a lost command would leave one unit on the old value indefinitely.
 
 A unit retries its stored network in the background, so one that boots before the building's router still ends up on it rather than sitting in access-point fallback until someone power-cycles it. That matters for groups as much as for the web page: access-point mode pins the channel, so a unit that failed to join its network silently drops out of its group too.
 
@@ -275,6 +281,7 @@ Almost everything worth changing is a named constant in `config.h`:
 | `FEATURE_DISPLAY` | Build with or without the OLED status screen |
 | `FEATURE_ESPNOW` | Build with or without group synchronisation |
 | `GROUP_BROADCAST_MS`, `GROUP_PEER_TIMEOUT_MS` | How often a unit speaks, and how long a silent peer still counts |
+| `GROUP_COMMAND_REPEATS`, `GROUP_COMMAND_GAP_MS` | How many times a command is sent, and how far apart |
 | `WIFI_AP_CHANNEL` | Channel the fallback access point uses, so un-networked units share one |
 | `WIFI_RETRY_INTERVAL_MS`, `WIFI_FALLBACK_AFTER_MS` | How often a unit in fallback retries its network, and how long a dropped connection is given before falling back |
 | `FIRMWARE_VERSION`, `PRODUCT_NAME` | Shown on the splash screen and logged at boot |

@@ -48,6 +48,10 @@ void setInactiveLevel(int value);
 const char* groupName();
 void setGroupName(const char* name);
 
+// This unit's label within its group. Empty means "use the MAC suffix".
+const char* unitName();
+void setUnitName(const char* name);
+
 // Relative equivalents, for the remote's step keys.
 void adjustDbMin(int delta);
 void adjustDbMax(int delta);
