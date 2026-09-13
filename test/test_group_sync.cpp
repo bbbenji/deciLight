@@ -26,6 +26,22 @@ constexpr int OFF_VERSION = 2;
 constexpr int OFF_TYPE = 3;
 constexpr int OFF_GROUP = 4;
 
+// The MAC the stubbed radio reports for this unit, as the roster formats it.
+const char kOwnId[] = "02000000ABCD";
+
+// Builds a config the way the web handler does, so the tests exercise the
+// same shape the firmware sends.
+group_sync::PeerConfig makeConfig(uint8_t zones, bool follows = true, uint8_t inactive = 0,
+                                  uint8_t screen = 207, const char* name = "") {
+  group_sync::PeerConfig c = {};
+  c.zones = zones;
+  c.followsGroup = follows;
+  c.inactiveLevel = inactive;
+  c.displayBrightness = screen;
+  strncpy(c.name, name, GROUP_NAME_MAX);
+  return c;
+}
+
 const uint8_t kPeerA[6] = {0x02, 0, 0, 0, 0, 0xA1};
 const uint8_t kPeerB[6] = {0x02, 0, 0, 0, 0, 0xB2};
 
@@ -297,6 +313,57 @@ void test_group_sync() {
   signal_light::tick();
   CHECK(strcmp(signal_light::selfTestLabel(), first) != 0,
         "a repeated command restarted the sequence");
+
+  // Per-unit settings are configured from whichever unit you have open, so a
+  // stack does not need three web pages visited in turn.
+  //
+  // kOwnId is the MAC the stubbed radio reports, formatted the way the roster
+  // formats peer ids.
+  CASE("peers are addressable by an id taken from the roster");
+  startGroup("classroom");
+  fakes::advanceMillis(GROUP_BROADCAST_MS + 1);
+  CHECK(captureLevel(50.0f), "setup failed");
+  fakes::deliverGroupPacket(kPeerA, packet, packetLen);
+
+  group_sync::PeerInfo seen[GROUP_MAX_PEERS];
+  CHECK(group_sync::peerList(seen, GROUP_MAX_PEERS) == 1, "no peer to address");
+  CHECK(strlen(seen[0].id) == 12, "peer id '%s' is not a MAC in hex", seen[0].id);
+  CHECK(group_sync::publishPeerConfig(seen[0].id, makeConfig(ZONE_MASK_WARN, true, 0)),
+        "a roster id was refused");
+
+  CASE("a malformed id addresses nobody rather than everybody");
+  CHECK(!group_sync::publishPeerConfig("nonsense", makeConfig(ZONE_MASK_WARN, true, 0)),
+        "a short id was accepted");
+  CHECK(!group_sync::publishPeerConfig("02000000ABCDEF", makeConfig(ZONE_MASK_WARN, true, 0)),
+        "an over-long id was accepted");
+  CHECK(!group_sync::publishPeerConfig("02000000ABCZ", makeConfig(ZONE_MASK_WARN, true, 0)),
+        "a non-hex id was accepted");
+
+  CASE("a config addressed at another unit is ignored");
+  startGroup("classroom");
+  settings::setZones(ZONE_MASK_ALL);
+  CHECK(group_sync::publishPeerConfig("0200000000A1", makeConfig(ZONE_MASK_LOUD, true, 0)), "setup failed");
+  packetLen = fakes::groupPacketLength();
+  memcpy(packet, fakes::groupPacket(), size_t(packetLen));
+  fakes::deliverGroupPacket(kPeerA, packet, packetLen);
+  group_sync::tick();
+  CHECK(settings::get().zones == ZONE_MASK_ALL, "applied someone else's config: zones %u",
+        settings::get().zones);
+
+  CASE("a config addressed at us is applied");
+  startGroup("classroom");
+  settings::setZones(ZONE_MASK_ALL);
+  CHECK(group_sync::publishPeerConfig(kOwnId, makeConfig(ZONE_MASK_LOUD, true, 32)),
+        "our own id was refused");
+  packetLen = fakes::groupPacketLength();
+  memcpy(packet, fakes::groupPacket(), size_t(packetLen));
+  fakes::deliverGroupPacket(kPeerA, packet, packetLen);
+  group_sync::tick();
+  CHECK(settings::get().zones == ZONE_MASK_LOUD, "zones not applied: %u",
+        settings::get().zones);
+  CHECK(settings::get().inactiveLevel == 32, "inactive level not applied: %u",
+        settings::get().inactiveLevel);
+  CHECK(settings::get().groupLevel, "follow-group not applied");
 
   CASE("the radio channel is reported for diagnosis");
   startGroup("classroom");

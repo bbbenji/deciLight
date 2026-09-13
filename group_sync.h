@@ -30,12 +30,27 @@ namespace group_sync {
 // A live peer, for the group roster. Declared outside the feature guard
 // because callers size an array of it whether or not the radio is compiled in.
 struct PeerInfo {
+  char id[13];       // MAC as hex, how a peer is addressed
   char name[GROUP_NAME_MAX + 1];
+  char ip[16];       // where its own web interface lives
   float levelDb;
   uint8_t zones;     // ZONE_MASK_* bits that peer lights for
   bool followsGroup; // whether its light tracks the group at all
+  uint8_t inactiveLevel;
+  uint8_t displayBrightness;
   uint32_t ageMs;
 };
+
+// The settings that belong to one unit rather than the group. Declared
+// outside the feature guard so callers can build one either way.
+struct PeerConfig {
+  uint8_t zones;
+  bool followsGroup;
+  uint8_t inactiveLevel;
+  uint8_t displayBrightness;
+  char name[GROUP_NAME_MAX + 1];
+};
+
 
 #if FEATURE_ESPNOW
 
@@ -91,6 +106,19 @@ float groupLevel(float ownDb, uint8_t combine);
 // they describe an individual unit's place in the arrangement, and copying
 // them would collapse a stack into three identical lights.
 void publishSettings();
+
+// Sends one peer the settings that are otherwise per-unit, so a stack can be
+// laid out from whichever unit you happen to have open rather than by
+// visiting each in turn. id is a peer's MAC as hex, from the roster.
+//
+// No acknowledgement is needed: every unit advertises its own zones in the
+// periodic broadcast, so the roster shows the change landing within a
+// quarter of a second, or shows that it did not.
+bool publishPeerConfig(const char* id, const PeerConfig& config);
+
+// Tells the group where this unit's web interface can be reached, so peers
+// can offer a link to it.
+void setAddress(uint32_t ipv4);
 void publishMode();
 void publishSelfTest();
 
@@ -111,6 +139,8 @@ inline uint8_t peerCount() { return 0; }
 inline uint32_t lastHeardMs() { return 0; }
 inline void publishLevel(float) {}
 inline void publishSettings() {}
+inline bool publishPeerConfig(const char*, const PeerConfig&) { return false; }
+inline void setAddress(uint32_t) {}
 inline void publishMode() {}
 inline void publishSelfTest() {}
 inline float groupLevel(float ownDb, uint8_t) { return ownDb; }

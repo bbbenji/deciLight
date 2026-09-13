@@ -132,6 +132,7 @@ Behind the page is a small HTTP API, if you would rather script it:
 | `POST /api/mode` | `mode=auto`, `mode=off`, or `mode=manual&color=RRGGBB` |
 | `POST /api/test` | Runs the LED self test, on the whole group |
 | `POST /api/group` | `group`, `unit`, `groupLevel`, `zones`, `combine`, `inactiveLevel` - any subset. Changing the group name restarts the unit |
+| `POST /api/peer` | `id` plus `zones`, `groupLevel`, `inactiveLevel` - configures one other unit in the group. `id` is a peer's MAC in hex, from the roster |
 | `POST /api/wifi` | `ssid`, `pass` - saved to flash, then the unit restarts |
 | `POST /api/update` | Multipart firmware upload. Requires HTTP basic auth, and is refused entirely unless `OTA_PASSWORD` is set |
 
@@ -247,7 +248,9 @@ What an inactive lamp shows is configurable: dark like a real traffic signal, or
 
 Zone masks, group name, screen brightness and the inactive level are deliberately *not* shared. They describe a unit's place in the arrangement rather than the room, and copying them would collapse a stack into three identical lights.
 
-Each unit carries a short name, which the Group section shows alongside every peer it can hear and the level that peer is reporting. An anonymous peer count is hard to act on; a roster makes a deaf or dead unit obvious. Units with no name set fall back to the last bytes of their MAC, so a roster is readable before anything is configured.
+Each unit carries a short name, and the Group section shows a roster: every peer it can hear, which zones that peer lights for, the level it is reporting, and a link straight to that unit's own page. An anonymous peer count is hard to act on; a roster makes a deaf or dead unit obvious. Units with no name set fall back to the last bytes of their MAC, so a roster is readable before anything is configured.
+
+**A whole stack is set up from one page.** Thresholds, brightness, mode and the self test already reach every unit, but zones and the follow-group switch are per-unit by design - and those are exactly the ones that would otherwise mean opening three web interfaces in turn. The zone chips beside each peer in the roster are clickable, and the change is addressed at that unit alone. Nothing is acknowledged and nothing needs to be: every unit advertises its own zones four times a second, so the roster shows the change landing, or shows that it did not.
 
 The same readout warns when the arrangement does not add up. A stack where nothing covers the middle band leaves it unlit; one where two units both claim `loud` lights two lamps at once. Both look like faults rather than settings, so the page says which zones are uncovered or doubled.
 

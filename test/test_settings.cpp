@@ -187,4 +187,22 @@ void test_settings() {
   CHECK(strlen(settings::wifiSsid()) <= 32, "ssid length %zu", strlen(settings::wifiSsid()));
   CHECK(strlen(settings::wifiPassword()) <= 63, "password length %zu",
         strlen(settings::wifiPassword()));
+
+  CASE("classroom activity presets set expected thresholds and activePreset()");
+  fakes::reset();
+  settings::begin();
+  settings::applyPreset(settings::Preset::Exam);
+  CHECK(s.dbMin == PRESET_EXAM_MIN && s.dbMax == PRESET_EXAM_MAX, "exam preset thresholds %u-%u", s.dbMin, s.dbMax);
+  CHECK(settings::activePreset() == settings::Preset::Exam, "activePreset failed for Exam");
+
+  settings::applyPreset(settings::Preset::QuietWork);
+  CHECK(s.dbMin == PRESET_QUIET_MIN && s.dbMax == PRESET_QUIET_MAX, "quiet preset thresholds %u-%u", s.dbMin, s.dbMax);
+  CHECK(settings::activePreset() == settings::Preset::QuietWork, "activePreset failed for QuietWork");
+
+  settings::applyPreset(settings::Preset::GroupWork);
+  CHECK(s.dbMin == PRESET_GROUP_MIN && s.dbMax == PRESET_GROUP_MAX, "group preset thresholds %u-%u", s.dbMin, s.dbMax);
+  CHECK(settings::activePreset() == settings::Preset::GroupWork, "activePreset failed for GroupWork");
+
+  settings::setDbMin(48);
+  CHECK(settings::activePreset() == settings::Preset::Custom, "custom thresholds didn't revert to Preset::Custom");
 }

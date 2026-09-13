@@ -76,9 +76,17 @@ input[type=file]{width:100%;margin-top:8px;color:var(--dim);font-size:13px}
 .bar i{display:block;height:100%;width:0;background:#5b8cff;transition:width .2s}
 #otanote,#testnote,#irnote,#scrnote,#gnote,#roster,#cover{color:var(--dim);font-size:13px;margin-top:10px}
 #roster table{width:100%;border-collapse:collapse;margin-top:6px}
-#roster td{padding:3px 0;font-variant-numeric:tabular-nums}
+#roster td{padding:6px 0;font-variant-numeric:tabular-nums;
+border-top:1px solid var(--line);vertical-align:middle}
+#roster tr:first-child td{border-top:0}
 #roster td.n{color:var(--text)}
-#roster td.r{text-align:right}
+#roster td.r{text-align:right;white-space:nowrap}
+#roster a{color:#5b8cff;text-decoration:none}
+#roster a:hover{text-decoration:underline}
+#roster .z{display:inline-block;padding:3px 7px;margin-right:4px;border-radius:6px;
+border:1px solid var(--line);background:#242835;font-size:12px;cursor:pointer;opacity:.45}
+#roster .z.on{opacity:1;background:#5b8cff;border-color:#5b8cff;color:#0d1017;font-weight:600}
+#roster .me .z{cursor:default}
 #cover.warn{color:var(--warn)}
 label input[type=checkbox]{margin-right:8px;accent-color:#5b8cff}
 #testnote.live{color:var(--text);font-weight:600}
@@ -95,7 +103,14 @@ label input[type=checkbox]{margin-right:8px;accent-color:#5b8cff}
   <div class="scale"><span>30</span><span id="lo"></span><span id="hi"></span><span>110</span></div>
 </div>
 
+
 <div class="card">
+  <label>Activity Presets</label>
+  <div class="row" style="margin-bottom:14px">
+    <button id="pexam">Exam</button>
+    <button id="pquiet">Quiet Work</button>
+    <button id="pgroup">Group Work</button>
+  </div>
   <label>Quiet below <b><span id="vmin"></span> dB</b></label>
   <input type="range" id="smin" min="30" max="110">
   <label>Too loud above <b><span id="vmax"></span> dB</b></label>
@@ -194,6 +209,9 @@ COLORS.forEach(function(c){
 });
 $("mauto").onclick=function(){post("/api/mode","mode=auto")};
 $("moff").onclick=function(){post("/api/mode","mode=off")};
+$("pexam").onclick=function(){post("/api/preset","preset=exam")};
+$("pquiet").onclick=function(){post("/api/preset","preset=quiet")};
+$("pgroup").onclick=function(){post("/api/preset","preset=group")};
 $("wsave").onclick=function(){
   post("/api/wifi","ssid="+encodeURIComponent($("ssid").value)+
                    "&pass="+encodeURIComponent($("pass").value));
@@ -244,6 +262,10 @@ function render(s){
   $("needle").style.left="calc("+Math.max(0,Math.min(100,(s.db-30)/80*100))+"% - 1.5px)";
   $("mauto").className=s.mode=="auto"?"on":"";
   $("moff").className=s.mode=="off"?"on":"";
+  $("pexam").className=s.preset=="exam"?"on":"";
+  $("pquiet").className=s.preset=="quiet"?"on":"";
+  $("pgroup").className=s.preset=="group"?"on":"";
+
   if(dragging!="smin") $("smin").value=s.dbMin;
   if(dragging!="smax") $("smax").value=s.dbMax;
   if(dragging!="sbri") $("sbri").value=s.brightness;
@@ -301,17 +323,47 @@ function listedZones(mask){
   return out.length==3?"all":(out.join("+")||"none");
 }
 
+// Zone chips are clickable for peers, so a stack can be laid out from
+// whichever unit happens to be open. The row for this unit is not editable
+// here - its own controls are directly above.
+function zoneChips(id, zones, editable){
+  var out="";
+  for(var i=0;i<3;i++){
+    var bit=1<<i, on=(zones&bit)?" on":"";
+    out+= editable
+      ? "<span class='z"+on+"' data-id='"+id+"' data-bit='"+bit+"'>"+ZONE_NAMES[i]+"</span>"
+      : "<span class='z"+on+"'>"+ZONE_NAMES[i]+"</span>";
+  }
+  return out;
+}
+
 function renderRoster(s){
   var rows="";
   (s.roster||[]).forEach(function(p){
     var age=p.ageMs<1500?"":" <span style=\"opacity:.6\">"+Math.round(p.ageMs/1000)+"s</span>";
-    rows+="<tr><td class=n>"+p.name+"</td><td>"+listedZones(p.zones)+
-          "</td><td class=r>"+p.db.toFixed(1)+age+"</td></tr>";
+    var label = (p.ip && p.ip!="0.0.0.0")
+      ? "<a href='http://"+p.ip+"/'>"+p.name+"</a>" : p.name;
+    rows+="<tr data-id='"+p.id+"' data-zones='"+p.zones+"' data-inact='"+p.inactiveLevel+"'>"+
+          "<td class=n>"+label+"</td>"+
+          "<td>"+zoneChips(p.id,p.zones,true)+"</td>"+
+          "<td class=r>"+p.db.toFixed(1)+age+"</td></tr>";
   });
   $("roster").innerHTML = rows
-    ? "<table><tr><td class=n>"+s.unit+" (this one)</td><td>"+listedZones(s.zones)+
-      "</td><td class=r>"+s.db.toFixed(1)+"</td></tr>"+rows+"</table>"
+    ? "<table><tr class=me><td class=n>"+s.unit+" <span style=\"opacity:.6\">(this one)</span></td>"+
+      "<td>"+zoneChips("",s.zones,false)+"</td>"+
+      "<td class=r>"+s.db.toFixed(1)+"</td></tr>"+rows+"</table>"
     : "";
+
+  // Delegated because the table is rebuilt on every poll.
+  $("roster").onclick=function(e){
+    var chip=e.target;
+    if(!chip.dataset || !chip.dataset.bit) return;
+    var row=chip.parentNode.parentNode;
+    var zones=(+row.dataset.zones)^(+chip.dataset.bit);
+    if(!zones) return;                       // refused, as on the unit itself
+    post("/api/peer","id="+chip.dataset.id+"&zones="+zones+
+         "&groupLevel=1&inactiveLevel="+row.dataset.inact);
+  };
 
   // A gap leaves a band unlit and an overlap lights two lamps at once; both
   // look like faults rather than settings.

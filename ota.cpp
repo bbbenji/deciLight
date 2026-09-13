@@ -47,15 +47,14 @@ void handleUpload(WebServer& server) {
       authorized = true;
 
       Serial.printf("ota: receiving %s\n", upload.filename.c_str());
-      // Hold a visible colour for the duration. The loop stops servicing
-      // measurements while the upload streams, so the signal would otherwise
-      // freeze on whatever it happened to be showing.
-      signal_light::setManualColor(COLOR_UPDATING);
+      // Display dynamic Gemini AI rainbow swirl animation for the duration.
+      signal_light::setUpdatingEffect(true);
       signal_light::tick();
 
       if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
         Update.printError(Serial);
         authorized = false;
+        signal_light::setUpdatingEffect(false);
       }
       break;
     }
@@ -65,19 +64,27 @@ void handleUpload(WebServer& server) {
       if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
         Update.printError(Serial);
         authorized = false;
+        signal_light::setUpdatingEffect(false);
         return;
       }
       wrote = true;
+      signal_light::tick();
       break;
 
     case UPLOAD_FILE_END:
-      if (!authorized) return;
+      if (!authorized) {
+        signal_light::setUpdatingEffect(false);
+        return;
+      }
       // true finalises and marks the new image bootable.
       if (Update.end(true)) {
         Serial.printf("ota: wrote %u bytes, restarting\n", upload.totalSize);
+        // Keep updating effect active right until reboot
+        signal_light::tick();
       } else {
         Update.printError(Serial);
         authorized = false;
+        signal_light::setUpdatingEffect(false);
       }
       break;
 
@@ -85,6 +92,8 @@ void handleUpload(WebServer& server) {
       Serial.println(F("ota: upload aborted"));
       Update.abort();
       authorized = false;
+      signal_light::setUpdatingEffect(false);
+      signal_light::tick();
       break;
 
     default:
@@ -111,6 +120,7 @@ void handleResult(WebServer& server) {
     return;
   }
   if (!wrote || Update.hasError()) {
+    signal_light::setUpdatingEffect(false);
     signal_light::setManualColor(COLOR_FAILED);
     signal_light::tick();
     server.send(400, "application/json", "{\"error\":\"update failed\"}");
@@ -119,7 +129,10 @@ void handleResult(WebServer& server) {
 
   server.send(200, "application/json", "{\"ok\":true,\"restarting\":true}");
   server.client().flush();
-  delay(200);  // let the response reach the browser before the reset
+  for (int i = 0; i < 10; i++) {
+    signal_light::tick();
+    delay(20);
+  }
   ESP.restart();
 }
 

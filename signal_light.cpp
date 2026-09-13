@@ -132,6 +132,54 @@ CRGB targetColor() {
   }
 }
 
+
+bool bootActive = false;
+uint32_t bootUntilMs = 0;
+bool updatingActive = false;
+
+CRGB hsvToRgb(uint8_t h, uint8_t s, uint8_t v) {
+  uint8_t region = h / 43;
+  uint8_t remainder = (h - (region * 43)) * 6;
+  uint8_t p = (v * (255 - s)) >> 8;
+  uint8_t q = (v * (255 - ((s * remainder) >> 8))) >> 8;
+  uint8_t t = (v * (255 - ((s * (255 - remainder)) >> 8))) >> 8;
+
+  switch (region) {
+    case 0:  return CRGB((uint32_t(v) << 16) | (uint32_t(t) << 8) | p);
+    case 1:  return CRGB((uint32_t(q) << 16) | (uint32_t(v) << 8) | p);
+    case 2:  return CRGB((uint32_t(p) << 16) | (uint32_t(v) << 8) | t);
+    case 3:  return CRGB((uint32_t(p) << 16) | (uint32_t(q) << 8) | v);
+    case 4:  return CRGB((uint32_t(t) << 16) | (uint32_t(p) << 8) | v);
+    default: return CRGB((uint32_t(v) << 16) | (uint32_t(p) << 8) | q);
+  }
+}
+
+uint8_t sin8(uint8_t theta) {
+  const float rad = (float(theta) / 255.0f) * 6.2831853f;
+  return uint8_t((sinf(rad) + 1.0f) * 127.5f);
+}
+
+void fillGeminiRainbow(CRGB* targetLeds, int count, uint32_t now) {
+  if (count <= 0) return;
+  // Base hue advances smoothly without wrapping jumps
+  const uint8_t baseHue = uint8_t(now / 8);
+  targetLeds[0] = hsvToRgb(baseHue, 255, 255);
+
+  const int outerCount = count > 1 ? count - 1 : 1;
+  // Rotation phase advances continuously in uint8_t modulo arithmetic
+  const uint8_t rotPhase = uint8_t(now / 4);
+
+  for (int i = 1; i < count; i++) {
+    // Spatial angle around outer ring (0 to 255)
+    uint8_t ringAngle = uint8_t((i - 1) * 256 / outerCount);
+    // Two opposing color poles (180 degrees apart in position)
+    uint8_t wave = sin8(ringAngle + rotPhase);
+    uint8_t hueOffset = (wave * 120) / 255;
+    uint8_t hue = baseHue + hueOffset;
+    targetLeds[i] = hsvToRgb(hue, 255, 255);
+  }
+}
+
 }  // namespace
 
 void begin(uint8_t brightness) {
@@ -152,6 +200,9 @@ void begin(uint8_t brightness) {
   testStep = 0;
   zoneMask = ZONE_MASK_ALL;
   inactiveLevel = 0;
+  bootActive = false;
+  bootUntilMs = 0;
+  updatingActive = false;
 
   fill_solid(leds, LED_COUNT, CRGB::Black);
   FastLED.show();
@@ -162,6 +213,21 @@ Mode mode() { return currentMode; }
 Zone zone() { return currentZone; }
 uint32_t manualColor() { return manualColor_; }
 float smoothedLevel() { return smoothedDb; }
+
+
+void startBootEffect(uint32_t durationMs) {
+  bootActive = true;
+  bootUntilMs = millis() + durationMs;
+  dirty = true;
+}
+
+void setUpdatingEffect(bool active) {
+  updatingActive = active;
+  dirty = true;
+}
+
+bool isBooting() { return bootActive; }
+bool isUpdating() { return updatingActive; }
 
 void setMode(Mode next) {
   if (next == currentMode) return;
@@ -229,27 +295,41 @@ void flashAck() {
 }
 
 void tick() {
+  const uint32_t now = millis();
+
+  if (bootActive) {
+    if (static_cast<int32_t>(now - bootUntilMs) >= 0) {
+      bootActive = false;
+    } else {
+      dirty = true;
+    }
+  }
+  if (updatingActive) {
+    dirty = true;
+  }
+
   // Signed comparisons throughout, so these survive the millis() rollover.
-  if (testActive && static_cast<int32_t>(millis() - testStepUntilMs) >= 0) {
+  if (testActive && static_cast<int32_t>(now - testStepUntilMs) >= 0) {
     testStep++;
     if (testStep >= kSelfTestSteps) {
       testActive = false;
     } else {
-      testStepUntilMs = millis() + kSelfTest[testStep].ms;
+      testStepUntilMs = now + kSelfTest[testStep].ms;
     }
     dirty = true;
   }
 
-  if (flashUntilMs != 0 && static_cast<int32_t>(millis() - flashUntilMs) >= 0) {
+  if (flashUntilMs != 0 && static_cast<int32_t>(now - flashUntilMs) >= 0) {
     flashUntilMs = 0;
     dirty = true;
   }
   if (!dirty) return;
 
-  // FastLED.show() disables interrupts for the length of the NeoPixel frame,
-  // which is long enough to cost the IR receiver an edge. Writing only on an
-  // actual change keeps that window rare instead of several times a second.
-  fill_solid(leds, LED_COUNT, targetColor());
+  if (bootActive || updatingActive) {
+    fillGeminiRainbow(leds, LED_COUNT, now);
+  } else {
+    fill_solid(leds, LED_COUNT, targetColor());
+  }
   FastLED.show();
   dirty = false;
 }

@@ -153,6 +153,7 @@ void sendState() {
   appendStr(out, "unit", group_sync::localName());
   appendInt(out, "coverage", group_sync::zoneCoverage());
   appendInt(out, "overlap", group_sync::zoneOverlap());
+  appendStr(out, "preset", settings::presetName(settings::activePreset()));
 
   // The roster is the one array in the document. Each entry is built with
   // the same appenders, starting from its own opening brace, so appendKey's
@@ -167,10 +168,13 @@ void sendState() {
     if (i) roster += ',';
     String entry;
     entry += '{';
+    appendStr(entry, "id", peers[i].id);
     appendStr(entry, "name", peers[i].name);
+    appendStr(entry, "ip", peers[i].ip);
     appendFixed(entry, "db", peers[i].levelDb, 1);
     appendInt(entry, "zones", peers[i].zones);
     appendBool(entry, "follows", peers[i].followsGroup);
+    appendInt(entry, "inactiveLevel", peers[i].inactiveLevel);
     appendInt(entry, "ageMs", peers[i].ageMs);
     entry += '}';
     roster += entry;
@@ -271,6 +275,40 @@ void handleGroup() {
   sendState();
 }
 
+// Configures one peer's per-unit settings from here, so a stack can be laid
+// out without visiting each unit's own page. Nothing is acknowledged: the
+// roster shows the change landing, because every unit advertises its own
+// zones in the periodic broadcast.
+void handlePeer() {
+  if (!server.hasArg("id")) {
+    server.send(400, "application/json", "{\"error\":\"id required\"}");
+    return;
+  }
+  const Settings& s = settings::get();
+  const uint8_t zones = server.hasArg("zones") ? server.arg("zones").toInt() : ZONE_MASK_ALL;
+  const bool follows = server.hasArg("groupLevel") ? server.arg("groupLevel").toInt() != 0 : true;
+  const uint8_t inactive =
+      server.hasArg("inactiveLevel") ? server.arg("inactiveLevel").toInt() : s.inactiveLevel;
+
+  group_sync::PeerConfig config = {};
+  config.zones = zones;
+  config.followsGroup = follows;
+  config.inactiveLevel = inactive;
+  config.displayBrightness = server.hasArg("displayBrightness")
+                                 ? server.arg("displayBrightness").toInt()
+                                 : s.displayBrightness;
+  if (server.hasArg("name")) {
+    strncpy(config.name, server.arg("name").c_str(), GROUP_NAME_MAX);
+    config.name[GROUP_NAME_MAX] = '\0';
+  }
+
+  if (!group_sync::publishPeerConfig(server.arg("id").c_str(), config)) {
+    server.send(400, "application/json", "{\"error\":\"unknown peer\"}");
+    return;
+  }
+  sendState();
+}
+
 // Starts the LED self test. Deliberately its own route rather than a mode, so
 // it cannot be reached by accident and always leaves the light as it found it.
 void handleTest() {
@@ -298,6 +336,23 @@ void handleMode() {
   group_sync::publishMode();
   sendState();
 }
+
+void handlePreset() {
+  const String name = server.arg("preset");
+  if (name == "exam") {
+    settings::applyPreset(settings::Preset::Exam);
+  } else if (name == "quiet") {
+    settings::applyPreset(settings::Preset::QuietWork);
+  } else if (name == "group") {
+    settings::applyPreset(settings::Preset::GroupWork);
+  } else {
+    server.send(400, "text/plain", "unknown preset");
+    return;
+  }
+  group_sync::publishSettings();
+  sendState();
+}
+
 
 // Credentials are written straight to NVS and take effect on restart, which
 // avoids having to tear down and rebuild the network stack underneath a live
@@ -356,6 +411,7 @@ bool startAccessPoint() {
   }
   accessPointMode = true;
   rememberAddress(WiFi.softAPIP());
+  group_sync::setAddress(uint32_t(WiFi.softAPIP()));
   enterState(Net::Ap);
 
   // Same reason as onStationUp(): the ESP-NOW peer is bound to an interface
@@ -377,6 +433,8 @@ void onStationUp() {
 
   Serial.print(F("wifi: connected, http://"));
   Serial.println(addressText);
+
+  group_sync::setAddress(uint32_t(WiFi.localIP()));
 
   MDNS.end();
   if (MDNS.begin(WIFI_HOSTNAME)) MDNS.addService("http", "tcp", WEB_SERVER_PORT);
@@ -451,7 +509,8 @@ bool begin() {
   if (startStationAttempt()) {
     while (netState == Net::Connecting) {
       maintainNetwork();
-      if (netState == Net::Connecting) delay(100);
+      signal_light::tick();
+      if (netState == Net::Connecting) delay(20);
     }
   } else if (!startAccessPoint()) {
     return false;
@@ -470,6 +529,8 @@ bool begin() {
   server.on("/api/mode", HTTP_POST, handleMode);
   server.on("/api/test", HTTP_POST, handleTest);
   server.on("/api/group", HTTP_POST, handleGroup);
+  server.on("/api/peer", HTTP_POST, handlePeer);
+  server.on("/api/preset", HTTP_POST, handlePreset);
   server.on("/api/wifi", HTTP_POST, handleWifi);
 #if FEATURE_OTA
   ota::registerRoutes(server);

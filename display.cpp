@@ -6,6 +6,8 @@
 #include <Arduino.h>
 #include <Wire.h>
 
+#include "settings.h"
+
 namespace display {
 namespace {
 
@@ -70,7 +72,7 @@ uint8_t contrastFor(uint8_t level) {
 // Pre-charge is the only handle left once contrast is at its floor. The
 // phase-2 period (the high nibble) is ramped across the bottom of the slider
 // so it meets the driver's default exactly at DISPLAY_DIM_BELOW; a step there
-// would show up as the brightness jumping partway along the travel.
+// would show up as the brightness jumping partway along the slider.
 uint8_t prechargeFor(uint8_t level) {
   if (level >= DISPLAY_DIM_BELOW) return DISPLAY_PRECHARGE_NORMAL;
   const uint8_t phase2 = 1 + uint8_t((uint16_t(level) * 14) / DISPLAY_DIM_BELOW);
@@ -110,12 +112,20 @@ void draw(const Frame& frame) {
   panel.clearDisplay();
   panel.setTextColor(SSD1306_WHITE);
 
-  // Top row: mode on the left, network status on the right.
+  // Top row: mode/preset on the left, network status on the right.
   panel.setTextSize(1);
   panel.setCursor(0, 0);
-  panel.print(frame.mode == uint8_t(signal_light::Mode::Auto)     ? "AUTO"
-              : frame.mode == uint8_t(signal_light::Mode::Manual) ? "MANUAL"
-                                                                  : "OFF");
+  if (frame.mode == uint8_t(signal_light::Mode::Auto)) {
+    const settings::Preset p = settings::activePreset();
+    if (p == settings::Preset::Exam) panel.print("EXAM");
+    else if (p == settings::Preset::QuietWork) panel.print("QUIET");
+    else if (p == settings::Preset::GroupWork) panel.print("GROUP");
+    else panel.print("AUTO");
+  } else if (frame.mode == uint8_t(signal_light::Mode::Manual)) {
+    panel.print("MANUAL");
+  } else {
+    panel.print("OFF");
+  }
   if (frame.status[0] != '\0') {
     const int16_t w = int16_t(strlen(frame.status)) * 6;
     panel.setCursor(DISPLAY_WIDTH - w, 0);

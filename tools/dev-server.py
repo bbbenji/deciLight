@@ -92,6 +92,9 @@ class Device:
         # board. Count is settable through the non-firmware /api/peers hook.
         self.peers = 0
         self.unit = ""
+        # Per-peer zone masks, so configuring a peer from here behaves the way
+        # the firmware does: the change shows up in the next roster.
+        self.peer_zones = {}
         self.mode = "auto"
         self.color = "%06X" % int(CFG["COLOR_QUIET"])
         self.zone = "unknown"
@@ -184,11 +187,21 @@ class Device:
             "unit": self.unit or "AB12",
             "coverage": self.zones if self.group_level else 0,
             "overlap": 0,
+            "preset": "exam" if (self.db_min == 40 and self.db_max == 50) else (
+                "quiet" if (self.db_min == 50 and self.db_max == 65) else (
+                    "group" if (self.db_min == 65 and self.db_max == 78) else "custom"
+                )
+            ),
+
             # Simulated roster entries so the group readout can be laid out
             # without a second board on the bench.
             "roster": [
-                {"name": f"peer{i+1}", "db": round(50.0 + 7 * i, 1),
-                 "zones": int(CFG["ZONE_MASK_ALL"]), "follows": True,
+                {"id": "02000000A%03d" % i, "name": f"peer{i+1}",
+                 "ip": f"192.168.1.{20 + i}",
+                 "db": round(50.0 + 7 * i, 1),
+                 "zones": self.peer_zones.get(i, int(CFG["ZONE_MASK_ALL"])),
+                 "follows": True,
+                 "inactiveLevel": 0,
                  "ageMs": 200 * (i + 1)}
                 for i in range(self.peers if self.group else 0)
             ],
@@ -291,6 +304,28 @@ class Handler(BaseHTTPRequestHandler):
                 self.device.inactive_level = int(
                     clamp(int(args["inactiveLevel"][0]), 0, CFG["LED_BRIGHTNESS_MAX"]))
             self._send(200, json.dumps(self.device.state()))
+        elif path == "/api/peer":
+            if "id" not in args:
+                self._send(400, json.dumps({"error": "id required"}))
+                return
+            for i in range(8):
+                if "02000000A%03d" % i == args["id"][0]:
+                    z = int(args.get("zones", ["7"])[0]) & int(CFG["ZONE_MASK_ALL"])
+                    if z:
+                        self.device.peer_zones[i] = z
+                    self._send(200, json.dumps(self.device.state()))
+                    return
+            self._send(400, json.dumps({"error": "unknown peer"}))
+        elif path == "/api/preset":
+            p = args.get("preset", ["custom"])[0]
+            if p == "exam":
+                self.device.db_min, self.device.db_max = 40, 50
+            elif p == "quiet":
+                self.device.db_min, self.device.db_max = 50, 65
+            elif p == "group":
+                self.device.db_min, self.device.db_max = 65, 78
+            self._send(200, json.dumps(self.device.state()))
+
         elif path == "/api/peers":
             # Not a firmware endpoint. Pretends peers are on the air.
             self.device.peers = int(args.get("count", ["0"])[0])

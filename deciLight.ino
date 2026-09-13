@@ -68,13 +68,17 @@ void setup() {
 
   settings::begin();
   signal_light::begin(settings::get().brightness);
+  signal_light::startBootEffect(4000);
+  signal_light::tick();
   remote_control::begin();
 
   display::begin();
   display::setBrightness(settings::get().displayBrightness);
   display::splash();
+  signal_light::tick();
 
   micReady = sound_level::begin();
+  signal_light::tick();
   if (!micReady) {
     Serial.println(F("deciLight: no microphone, running in remote-only mode"));
     signal_light::setMode(signal_light::Mode::Off);

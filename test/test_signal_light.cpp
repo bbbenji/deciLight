@@ -308,4 +308,17 @@ void test_signal_light() {
   settleAt(90, narrowMin, narrowMax);
   CHECK(fakes::lastColor() == COLOR_LOUD, "above a narrow window: %s",
         colorName(fakes::lastColor()));
+
+  CASE("boot animation and update animation flag states properly");
+  start();
+  signal_light::startBootEffect(1000);
+  CHECK(signal_light::isBooting(), "boot effect not active after start");
+  fakes::advanceMillis(1500);
+  signal_light::tick();
+  CHECK(!signal_light::isBooting(), "boot effect did not expire");
+
+  signal_light::setUpdatingEffect(true);
+  CHECK(signal_light::isUpdating(), "updating effect not active");
+  signal_light::setUpdatingEffect(false);
+  CHECK(!signal_light::isUpdating(), "updating effect did not turn off");
 }

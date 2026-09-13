@@ -32,7 +32,7 @@ constexpr uint32_t SERIAL_BAUD = 115200;
 // Bump it when you flash something you want to be able to identify later -
 // with OTA in the picture, "which build is actually on that unit" stops being
 // a rhetorical question.
-#define FIRMWARE_VERSION_JSON "2.0.0"
+#define FIRMWARE_VERSION_JSON "2.0.6"
 constexpr char FIRMWARE_VERSION[] = FIRMWARE_VERSION_JSON;
 
 // The name on the splash screen. Lower-case "d" to match how the project
@@ -147,6 +147,16 @@ constexpr uint8_t DB_LIMIT_LOW = 30;
 constexpr uint8_t DB_LIMIT_HIGH = 110;
 constexpr uint8_t DB_MIN_SPAN = 2;
 
+// Activity Presets (One-tap classroom presets)
+constexpr uint8_t PRESET_EXAM_MIN = 40;
+constexpr uint8_t PRESET_EXAM_MAX = 50;
+
+constexpr uint8_t PRESET_QUIET_MIN = 50;
+constexpr uint8_t PRESET_QUIET_MAX = 65;
+
+constexpr uint8_t PRESET_GROUP_MIN = 65;
+constexpr uint8_t PRESET_GROUP_MAX = 78;
+
 // -----------------------------------------------------------------------------
 // Dampening
 //
@@ -175,9 +185,10 @@ constexpr uint8_t COMBINE_DEFAULT = COMBINE_LOUDEST;
 // which is what makes three units read as one traffic signal. A two-unit
 // stack works too, with one of them covering a pair.
 constexpr uint8_t ZONE_MASK_QUIET = 1 << 0;
-constexpr uint8_t ZONE_MASK_WARN  = 1 << 1;
-constexpr uint8_t ZONE_MASK_LOUD  = 1 << 2;
-constexpr uint8_t ZONE_MASK_ALL   = ZONE_MASK_QUIET | ZONE_MASK_WARN | ZONE_MASK_LOUD;
+constexpr uint8_t ZONE_MASK_WARN = 1 << 1;
+constexpr uint8_t ZONE_MASK_LOUD = 1 << 2;
+constexpr uint8_t ZONE_MASK_ALL =
+    ZONE_MASK_QUIET | ZONE_MASK_WARN | ZONE_MASK_LOUD;
 
 // What a unit shows when the group is in a zone it does not cover. Zero is a
 // dark lamp, like a real traffic signal; a low value leaves it glowing faintly
@@ -295,7 +306,7 @@ constexpr uint8_t GROUP_MAX_PEERS = 8;
 // Bumped only when the wire format changes incompatibly. Messages carrying
 // anything else are ignored, so a half-updated group degrades to units
 // working alone rather than to nonsense.
-constexpr uint8_t GROUP_PROTOCOL_VERSION = 3;
+constexpr uint8_t GROUP_PROTOCOL_VERSION = 5;
 
 // A short label so units can be told apart in a group. Left empty it falls
 // back to the last bytes of the unit's MAC, which is ugly but unique - the

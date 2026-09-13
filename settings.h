@@ -34,6 +34,18 @@ const Settings& get();
 // Absolute setters. All of them clamp to the limits in config.h and keep
 // dbMin + DB_MIN_SPAN <= dbMax, so no caller - remote, web or otherwise - can
 // wrap a value or close the window.
+enum class Preset : uint8_t {
+  Custom = 0,
+  Exam,
+  QuietWork,
+  GroupWork,
+};
+
+// Applies one-tap classroom threshold preset
+void applyPreset(Preset preset);
+Preset activePreset();
+const char* presetName(Preset preset);
+
 void setDbMin(int value);
 void setDbMax(int value);
 void setBrightness(int value);

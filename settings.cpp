@@ -165,6 +165,55 @@ void setDbMax(int value) {
   markDirty();
 }
 
+void applyPreset(Preset preset) {
+  uint8_t targetMin = 0, targetMax = 0;
+  switch (preset) {
+    case Preset::Exam:
+      targetMin = PRESET_EXAM_MIN;
+      targetMax = PRESET_EXAM_MAX;
+      break;
+    case Preset::QuietWork:
+      targetMin = PRESET_QUIET_MIN;
+      targetMax = PRESET_QUIET_MAX;
+      break;
+    case Preset::GroupWork:
+      targetMin = PRESET_GROUP_MIN;
+      targetMax = PRESET_GROUP_MAX;
+      break;
+    default:
+      return;
+  }
+  if (targetMin >= current.dbMin) {
+    setDbMax(targetMax);
+    setDbMin(targetMin);
+  } else {
+    setDbMin(targetMin);
+    setDbMax(targetMax);
+  }
+}
+
+Preset activePreset() {
+  if (current.dbMin == PRESET_EXAM_MIN && current.dbMax == PRESET_EXAM_MAX) {
+    return Preset::Exam;
+  }
+  if (current.dbMin == PRESET_QUIET_MIN && current.dbMax == PRESET_QUIET_MAX) {
+    return Preset::QuietWork;
+  }
+  if (current.dbMin == PRESET_GROUP_MIN && current.dbMax == PRESET_GROUP_MAX) {
+    return Preset::GroupWork;
+  }
+  return Preset::Custom;
+}
+
+const char* presetName(Preset preset) {
+  switch (preset) {
+    case Preset::Exam:      return "exam";
+    case Preset::QuietWork: return "quiet";
+    case Preset::GroupWork: return "group";
+    default:                return "custom";
+  }
+}
+
 void setBrightness(int value) {
   const uint8_t next = clampInt(value, LED_BRIGHTNESS_MIN, LED_BRIGHTNESS_MAX);
   if (next == current.brightness) return;

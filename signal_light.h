@@ -68,6 +68,13 @@ bool selfTestRunning();
 // The colour that should be showing right now, or "" when not testing.
 const char* selfTestLabel();
 
+
+// Gemini AI / Pixel style dynamic rainbow swirl effect for boot and OTA updates
+void startBootEffect(uint32_t durationMs = 2500);
+void setUpdatingEffect(bool active);
+bool isBooting();
+bool isUpdating();
+
 // Call from loop(). Ends expired flashes and pushes pending changes to the
 // LEDs; a no-op when nothing has changed.
 void tick();

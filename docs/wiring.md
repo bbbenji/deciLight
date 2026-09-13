@@ -157,6 +157,50 @@ from the 5V supply directly and tie the grounds together. The 3.3V rail
 comfortably handles the microphone, the IR receiver and the display between
 them - single-digit milliamps in total.
 
+### Dual-USB Daisy-Chain Powering (Multi-Unit Stacks)
+
+When building multiple units to form a stacked traffic signal or mirrored room,
+you can equip each unit's enclosure with **two USB power ports** (USB Power In
+and USB Power Out) wired in parallel. This allows powering an entire stack from
+a single wall charger plugged into the first unit, with short USB jumper cables
+daisychaining power to the rest.
+
+```
+  USB Wall Adapter (5V 2A+)
+           │
+           ▼ [USB In]
+      ┌──────────┐  [USB Out] ──USB Cable──► [USB In]
+      │ Unit #1  │                           ┌──────────┐
+      └──────────┘                           │ Unit #2  │ ──► [Unit #3]
+                                             └──────────┘
+```
+
+**Wiring Dual USB Ports in Parallel:**
+
+```
+   USB Port 1 (Power In)           USB Port 2 (Pass-Through Out)
+   ─────────────────────           ────────────────────────────
+          VBUS / 5V  ────────┬────  VBUS / 5V
+                GND  ──────┬─┼────  GND
+                           │ │
+                     ESP32 │ │ NeoPixel Ring
+                     ───── │ │ ─────────────
+                       5V ─┘ └─ 5V
+                      GND ────  GND
+```
+
+1. Connect **VBUS / 5V** of USB Port 1 to **VBUS / 5V** of USB Port 2, the ESP32 `5V` (or `VIN`) pad, and the NeoPixel `5V` wire.
+2. Connect **GND** of USB Port 1 to **GND** of USB Port 2, ESP32 `GND`, and the NeoPixel `GND` wire.
+3. Data lines (`D+` / `D-`) on Port 2 can be left unconnected.
+
+> [!NOTE]
+> **Optional for Single-Unit Builds**: Adding the second USB pass-through port is **completely optional**. If you are building only one standalone unit, a single USB power port (or the ESP32 dev board's onboard USB port for bench testing) is all you need.
+
+#### Power Supply Budgeting for Daisy Chains
+- **1 Unit**: ~420mA max (~200mA typ) → Standard 5V 1A USB adapter.
+- **3 Units (Stack)**: ~1.25A max (~600mA typ) → 5V 2A or 2.4A USB power adapter.
+- **4+ Units**: ~1.7A+ max → 5V 3A USB power adapter with quality USB cables to prevent voltage drop across the chain.
+
 A 1000µF capacitor across the ring's 5V and ground steadies things if the LEDs
 flicker on a sudden brightness change, and the 330R resistor in the data line
 is cheap insurance against ringing on a long lead. Neither is essential on a

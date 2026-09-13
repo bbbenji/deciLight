@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "settings.h"
+#include "display.h"
 #include "signal_light.h"
 
 namespace group_sync {
@@ -24,6 +25,7 @@ enum MessageType : uint8_t {
   MSG_SETTINGS = 2,
   MSG_MODE = 3,
   MSG_SELF_TEST = 4,
+  MSG_CONFIG = 5,  // addressed at a single unit
 };
 
 // Packed and fixed-width so the format does not depend on how a particular
@@ -33,6 +35,9 @@ struct __attribute__((packed)) Message {
   uint8_t version;
   uint8_t type;
   uint32_t group;  // hash of the group name
+  // All zeroes means everyone in the group. Anything else is one unit's MAC,
+  // which is how per-unit settings are configured from elsewhere.
+  uint8_t target[6];
   // A union rather than variable-length payloads, so every message is the
   // same size and a wrong length is enough to reject a foreign packet.
   union {
@@ -41,6 +46,9 @@ struct __attribute__((packed)) Message {
       uint8_t zones;      // what the sender lights for
       uint8_t follows;    // whether the sender tracks the group at all
       char name[GROUP_NAME_MAX + 1];
+      uint8_t inactiveLevel;
+      uint8_t displayBrightness;
+      uint8_t ip[4];  // where the sender's web interface lives
     } level;
     struct {
       uint8_t dbMin;
@@ -55,6 +63,13 @@ struct __attribute__((packed)) Message {
       uint8_t mode;  // signal_light::Mode
       uint8_t r, g, b;
     } mode;
+    struct {
+      uint8_t zones;
+      uint8_t follows;
+      uint8_t inactiveLevel;
+      uint8_t displayBrightness;
+      char name[GROUP_NAME_MAX + 1];
+    } config;
   } body;
 };
 
@@ -63,6 +78,9 @@ struct Peer {
   float levelDb;
   uint8_t zones;
   bool followsGroup;
+  uint8_t inactiveLevel;
+  uint8_t displayBrightness;
+  uint8_t ip[4];
   char name[GROUP_NAME_MAX + 1];
   uint32_t heardMs;
   bool used;
@@ -82,6 +100,8 @@ bool applyingRemote = false;
 
 // This unit's label on the air, filled in at begin().
 char localNameBuf[GROUP_NAME_MAX + 1] = {0};
+uint8_t localMac[6] = {0};
+uint32_t localIp = 0;
 
 // Commands are repeated a few times because broadcast is unacknowledged. The
 // repeats are paced by tick() rather than a delay, so a held remote key
@@ -100,6 +120,10 @@ struct Inbox {
   uint8_t mode;
   uint32_t color;
   bool haveSelfTest;
+  bool haveConfig;
+  uint8_t zones, inactiveLevel, displayBrightness;
+  bool follows;
+  char name[GROUP_NAME_MAX + 1];
 };
 Inbox inbox = {};
 
@@ -123,6 +147,35 @@ uint32_t hashGroup(const char* name) {
 
 bool sameMac(const uint8_t* a, const uint8_t* b) { return memcmp(a, b, 6) == 0; }
 
+void macToHex(const uint8_t* mac, char* out) {
+  static const char kHex[] = "0123456789ABCDEF";
+  for (int i = 0; i < 6; i++) {
+    out[i * 2] = kHex[mac[i] >> 4];
+    out[i * 2 + 1] = kHex[mac[i] & 0xF];
+  }
+  out[12] = '\0';
+}
+
+// Returns false on anything that is not twelve hex digits, so a malformed id
+// addresses nobody rather than everybody.
+bool hexToMac(const char* hex, uint8_t* mac) {
+  if (hex == nullptr || strlen(hex) != 12) return false;
+  for (int i = 0; i < 6; i++) {
+    uint8_t byte = 0;
+    for (int n = 0; n < 2; n++) {
+      const char c = hex[i * 2 + n];
+      const int v = (c >= '0' && c <= '9')   ? c - '0'
+                    : (c >= 'A' && c <= 'F') ? c - 'A' + 10
+                    : (c >= 'a' && c <= 'f') ? c - 'a' + 10
+                                             : -1;
+      if (v < 0) return false;
+      byte = uint8_t((byte << 4) | v);
+    }
+    mac[i] = byte;
+  }
+  return true;
+}
+
 // Common header, plus the two conditions under which nothing may be sent.
 bool fill(Message& msg, uint8_t type) {
   if (!running || applyingRemote) return false;
@@ -131,6 +184,7 @@ bool fill(Message& msg, uint8_t type) {
   msg.version = GROUP_PROTOCOL_VERSION;
   msg.type = type;
   msg.group = groupId;
+  memset(msg.target, 0, sizeof(msg.target));  // everyone unless addressed
   memset(&msg.body, 0, sizeof(msg.body));
   return true;
 }
@@ -159,6 +213,11 @@ void onReceive(const uint8_t* mac, const uint8_t* data, int len) {
   if (msg.magic[0] != 'd' || msg.magic[1] != 'L') return;
   if (msg.version != GROUP_PROTOCOL_VERSION) return;
   if (msg.group != groupId) return;
+
+  // An addressed message is for exactly one unit; everything else is for the
+  // whole group.
+  static const uint8_t kEveryone[6] = {0, 0, 0, 0, 0, 0};
+  if (!sameMac(msg.target, kEveryone) && !sameMac(msg.target, localMac)) return;
   const uint32_t now = millis();
 
   if (msg.type != MSG_LEVEL) {
@@ -181,6 +240,15 @@ void onReceive(const uint8_t* mac, const uint8_t* data, int len) {
         break;
       case MSG_SELF_TEST:
         inbox.haveSelfTest = true;
+        break;
+      case MSG_CONFIG:
+        inbox.zones = msg.body.config.zones;
+        inbox.follows = msg.body.config.follows != 0;
+        inbox.inactiveLevel = msg.body.config.inactiveLevel;
+        inbox.displayBrightness = msg.body.config.displayBrightness;
+        memcpy(inbox.name, msg.body.config.name, sizeof(inbox.name));
+        inbox.name[GROUP_NAME_MAX] = '\0';
+        inbox.haveConfig = true;
         break;
       default:
         break;
@@ -213,6 +281,9 @@ void onReceive(const uint8_t* mac, const uint8_t* data, int len) {
     peers[slot].followsGroup = msg.body.level.follows != 0;
     memcpy(peers[slot].name, msg.body.level.name, GROUP_NAME_MAX);
     peers[slot].name[GROUP_NAME_MAX] = '\0';
+    peers[slot].inactiveLevel = msg.body.level.inactiveLevel;
+    peers[slot].displayBrightness = msg.body.level.displayBrightness;
+    memcpy(peers[slot].ip, msg.body.level.ip, 4);
     peers[slot].heardMs = now;
     peers[slot].used = true;
   }
@@ -232,12 +303,11 @@ bool begin() {
   memset(peers, 0, sizeof(peers));
   repeatsLeft = 0;
 
+  WiFi.macAddress(localMac);
   strncpy(localNameBuf, settings::unitName(), GROUP_NAME_MAX);
   localNameBuf[GROUP_NAME_MAX] = '\0';
   if (localNameBuf[0] == '\0') {
-    uint8_t mac[6] = {0};
-    WiFi.macAddress(mac);
-    snprintf(localNameBuf, sizeof(localNameBuf), "%02X%02X", mac[4], mac[5]);
+    snprintf(localNameBuf, sizeof(localNameBuf), "%02X%02X", localMac[4], localMac[5]);
   }
 
   if (settings::groupName()[0] == '\0') {
@@ -292,13 +362,37 @@ uint8_t peerCount() {
 
 const char* localName() { return localNameBuf; }
 
+void setAddress(uint32_t ipv4) { localIp = ipv4; }
+
+bool publishPeerConfig(const char* id, const PeerConfig& config) {
+  uint8_t mac[6];
+  if (!hexToMac(id, mac)) return false;
+
+  Message msg;
+  if (!fill(msg, MSG_CONFIG)) return false;
+  memcpy(msg.target, mac, 6);
+  msg.body.config.zones = config.zones;
+  msg.body.config.follows = config.followsGroup ? 1 : 0;
+  msg.body.config.inactiveLevel = config.inactiveLevel;
+  msg.body.config.displayBrightness = config.displayBrightness;
+  strncpy(msg.body.config.name, config.name, GROUP_NAME_MAX);
+  msg.body.config.name[GROUP_NAME_MAX] = '\0';
+  send(msg, GROUP_COMMAND_REPEATS);
+  return true;
+}
+
 uint8_t peerList(PeerInfo* out, uint8_t max) {
   uint8_t n = 0;
   portENTER_CRITICAL(&peerLock);
   const uint32_t now = millis();
   for (int i = 0; i < GROUP_MAX_PEERS && n < max; i++) {
     if (!peers[i].used) continue;
+    macToHex(peers[i].mac, out[n].id);
     memcpy(out[n].name, peers[i].name, sizeof(out[n].name));
+    snprintf(out[n].ip, sizeof(out[n].ip), "%u.%u.%u.%u", peers[i].ip[0], peers[i].ip[1],
+             peers[i].ip[2], peers[i].ip[3]);
+    out[n].inactiveLevel = peers[i].inactiveLevel;
+    out[n].displayBrightness = peers[i].displayBrightness;
     out[n].levelDb = peers[i].levelDb;
     out[n].zones = peers[i].zones;
     out[n].followsGroup = peers[i].followsGroup;
@@ -362,6 +456,12 @@ void publishLevel(float leqDb) {
   msg.body.level.follows = settings::get().groupLevel ? 1 : 0;
   strncpy(msg.body.level.name, localNameBuf, GROUP_NAME_MAX);
   msg.body.level.name[GROUP_NAME_MAX] = '\0';
+  msg.body.level.inactiveLevel = settings::get().inactiveLevel;
+  msg.body.level.displayBrightness = settings::get().displayBrightness;
+  msg.body.level.ip[0] = localIp & 0xFF;
+  msg.body.level.ip[1] = (localIp >> 8) & 0xFF;
+  msg.body.level.ip[2] = (localIp >> 16) & 0xFF;
+  msg.body.level.ip[3] = (localIp >> 24) & 0xFF;
   send(msg);
 }
 
@@ -434,7 +534,10 @@ void tick() {
   inbox = Inbox{};
   portEXIT_CRITICAL(&peerLock);
 
-  if (!pending.haveSettings && !pending.haveMode && !pending.haveSelfTest) return;
+  if (!pending.haveSettings && !pending.haveMode && !pending.haveSelfTest &&
+      !pending.haveConfig) {
+    return;
+  }
 
   applyingRemote = true;
 
@@ -454,6 +557,16 @@ void tick() {
   }
   // Guarded because commands are repeated: restarting a running test would
   // show as the sequence stuttering.
+  if (pending.haveConfig) {
+    settings::setZones(pending.zones);
+    settings::setGroupLevel(pending.follows);
+    settings::setInactiveLevel(pending.inactiveLevel);
+    settings::setDisplayBrightness(pending.displayBrightness);
+    if (pending.name[0] != '\0') settings::setUnitName(pending.name);
+    const Settings& s = settings::get();
+    signal_light::setZones(s.zones, s.inactiveLevel);
+    display::setBrightness(s.displayBrightness);
+  }
   if (pending.haveSelfTest && !signal_light::selfTestRunning()) signal_light::startSelfTest();
 
   applyingRemote = false;
