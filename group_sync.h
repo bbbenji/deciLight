@@ -1,0 +1,157 @@
+/*
+ * deciLight - group synchronisation over ESP-NOW
+ *
+ * Units that share a radio channel and a group name act as one light. Each
+ * broadcasts what its microphone is hearing a few times a second; each works
+ * out the group's level for itself. There is no leader, no election and no
+ * pairing step - joining a group means being given the same name.
+ *
+ * Two constraints are worth knowing before wiring this up:
+ *
+ *   - ESP-NOW only reaches peers on the same WiFi channel, and in station
+ *     mode the channel belongs to whichever router was joined. Units on
+ *     different networks will not hear each other however they are
+ *     configured. channel() reports what this unit ended up on.
+ *
+ *   - Membership is a convention, not a secret. The transport is broadcast
+ *     and the group name is a filter, so anything in range running this
+ *     firmware with the same name joins in.
+ */
+
+#ifndef DECILIGHT_GROUP_SYNC_H
+#define DECILIGHT_GROUP_SYNC_H
+
+#include <stdint.h>
+
+#include "config.h"
+
+namespace group_sync {
+
+// A live peer, for the group roster. Declared outside the feature guard
+// because callers size an array of it whether or not the radio is compiled in.
+struct PeerInfo {
+  char id[13];       // MAC as hex, how a peer is addressed
+  char name[GROUP_NAME_MAX + 1];
+  char ip[16];       // where its own web interface lives
+  float levelDb;
+  uint8_t zones;     // ZONE_MASK_* bits that peer lights for
+  bool followsGroup; // whether its light tracks the group at all
+  uint8_t inactiveLevel;
+  uint8_t displayBrightness;
+  uint32_t ageMs;
+};
+
+// The settings that belong to one unit rather than the group. Declared
+// outside the feature guard so callers can build one either way.
+struct PeerConfig {
+  uint8_t zones;
+  bool followsGroup;
+  uint8_t inactiveLevel;
+  uint8_t displayBrightness;
+  char name[GROUP_NAME_MAX + 1];
+};
+
+
+#if FEATURE_ESPNOW
+
+// Brings up ESP-NOW on the interface WiFi is already using. Must be called
+// after networking is up, because the radio has to be started first. False
+// means the group features are unavailable; the light works alone regardless.
+bool begin();
+
+// True once ESP-NOW is running and a group name is configured.
+bool active();
+
+// The radio channel this unit is on. Peers must match, so this is the first
+// thing to check when a group will not form.
+uint8_t channel();
+
+// Peers heard from within GROUP_PEER_TIMEOUT_MS, excluding this unit.
+uint8_t peerCount();
+
+// Fills up to max entries, returns how many were written.
+uint8_t peerList(PeerInfo* out, uint8_t max);
+
+// The name this unit answers to on the air, which falls back to a MAC suffix
+// when none has been set.
+const char* localName();
+
+// Zone bits covered by this unit and every live peer that follows the group,
+// and the bits covered by more than one of them. A stack with a gap shows a
+// band as unlit; one with an overlap lights two lamps at once. Both look like
+// faults rather than misconfiguration, so the interface warns about them.
+uint8_t zoneCoverage();
+uint8_t zoneOverlap();
+
+// Age in milliseconds of the most recently heard peer, or 0 when there are
+// none. For a "last heard" readout.
+uint32_t lastHeardMs();
+
+// Offers this unit's own measurement to the group. Rate limited internally,
+// so it is safe to call for every reading.
+void publishLevel(float leqDb);
+
+// The level the light should follow, combined from this unit and its live
+// peers according to the configured rule. Returns ownDb unchanged when the
+// group is inactive or nobody else is talking, so the caller never needs to
+// special-case a lone unit.
+float groupLevel(float ownDb, uint8_t combine);
+
+// Relays a locally-originated change to the group. Each is a no-op while a
+// received message is being applied, so a change can never echo back and
+// forth between units.
+//
+// Thresholds and LED brightness are shared because they describe the room.
+// Zone masks, group name, screen brightness and the inactive level are not:
+// they describe an individual unit's place in the arrangement, and copying
+// them would collapse a stack into three identical lights.
+void publishSettings();
+
+// Sends one peer the settings that are otherwise per-unit, so a stack can be
+// laid out from whichever unit you happen to have open rather than by
+// visiting each in turn. id is a peer's MAC as hex, from the roster.
+//
+// No acknowledgement is needed: every unit advertises its own zones in the
+// periodic broadcast, so the roster shows the change landing within a
+// quarter of a second, or shows that it did not.
+bool publishPeerConfig(const char* id, const PeerConfig& config);
+
+// Tells the group where this unit's web interface can be reached, so peers
+// can offer a link to it.
+void setAddress(uint32_t ipv4);
+void publishMode();
+void publishSelfTest();
+
+// Call from loop(). Ages out peers that have gone quiet, and applies anything
+// received since the last call.
+//
+// Messages are applied here rather than in the radio callback, which runs on
+// the WiFi task: settings and LED state are not safe to touch from two
+// threads, and NVS writes least of all.
+void tick();
+
+#else
+
+inline bool begin() { return false; }
+inline bool active() { return false; }
+inline uint8_t channel() { return 0; }
+inline uint8_t peerCount() { return 0; }
+inline uint32_t lastHeardMs() { return 0; }
+inline void publishLevel(float) {}
+inline void publishSettings() {}
+inline bool publishPeerConfig(const char*, const PeerConfig&) { return false; }
+inline void setAddress(uint32_t) {}
+inline void publishMode() {}
+inline void publishSelfTest() {}
+inline float groupLevel(float ownDb, uint8_t) { return ownDb; }
+inline void tick() {}
+inline uint8_t peerList(PeerInfo*, uint8_t) { return 0; }
+inline const char* localName() { return ""; }
+inline uint8_t zoneCoverage() { return 0; }
+inline uint8_t zoneOverlap() { return 0; }
+
+#endif  // FEATURE_ESPNOW
+
+}  // namespace group_sync
+
+#endif  // DECILIGHT_GROUP_SYNC_H

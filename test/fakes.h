@@ -1,0 +1,53 @@
+/*
+ * Control surface for the host stubs.
+ *
+ * Lets a test move the clock, inspect what the firmware did to the LEDs, count
+ * flash writes, and feed IR key presses in.
+ */
+
+#ifndef DECILIGHT_TEST_FAKES_H
+#define DECILIGHT_TEST_FAKES_H
+
+#include <stdint.h>
+
+namespace fakes {
+
+// Clears every fake back to power-on state: clock at zero, NVS empty, LED
+// record blank, IR queue drained.
+void reset();
+
+// --- clock ---
+void advanceMillis(uint32_t ms);
+
+// --- LEDs ---
+uint32_t lastColor();   // 0xRRGGBB most recently written to the ring
+int showCount();        // how many times FastLED.show() was called
+uint8_t brightness();   // last value passed to FastLED.setBrightness()
+
+// --- NVS ---
+int nvsWrites();                                  // writes since reset()
+void seedUInt(const char* key, uint32_t value);   // pretend a stored value exists
+uint32_t storedUInt(const char* key, uint32_t fallback);
+
+// --- IR ---
+void receiveIr(uint64_t code);  // queue one decoded code for the next poll()
+
+// --- ESP-NOW ---
+int groupPacketsSent();
+int groupPacketLength();                      // length of the most recent send
+const uint8_t* groupPacket();                 // bytes of the most recent send
+void deliverGroupPacket(const uint8_t* mac, const uint8_t* data, int len);
+void setChannel(uint8_t channel);
+void setWifiMode(int mode);
+
+// --- display ---
+void setPanelPresent(bool present);  // whether begin() finds an SSD1306
+int displayFrames();                 // full frames pushed since reset()
+const char* displayText();           // text drawn in the most recent frame
+int displayCommandCount(uint8_t c);  // how many times a raw panel command was sent
+uint8_t lastContrast();              // value that followed the last SETCONTRAST
+uint8_t lastCommandValue(uint8_t c); // parameter byte that followed command c
+
+}  // namespace fakes
+
+#endif  // DECILIGHT_TEST_FAKES_H

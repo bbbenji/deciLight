@@ -1,10 +1,18 @@
-LED
-Signal (Y)  D2
+Pin numbers below are ESP32 GPIO numbers, not board silkscreen labels.
+On a FireBeetle the two differ - its "D2" pad is GPIO25, not GPIO2.
 
-MIC
-I2S SD (Y)  D32
-I2S WS (B)  D15
-I2S SCK (G) D14
+LED (NeoPixel Jewel)
+Signal (Y)  GPIO2
 
-IR
-Signal (Y)  D4
+MIC (INMP441 / ICS-43434)
+I2S SD (Y)  GPIO32
+I2S WS (B)  GPIO15
+I2S SCK (G) GPIO14
+L/R         GND
+
+IR (VS1838B)
+Signal (Y)  GPIO4
+
+OLED (SSD1306 128x64, I2C)   -- wired, not yet driven by the firmware
+SDA         GPIO21
+SCL         GPIO22

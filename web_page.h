@@ -1,0 +1,468 @@
+/*
+ * deciLight - the control page served to the browser
+ *
+ * Kept as one self-contained document with no external requests, so it loads
+ * over the unit's own access point with no internet connection available.
+ * Stored in flash rather than RAM.
+ */
+
+#ifndef DECILIGHT_WEB_PAGE_H
+#define DECILIGHT_WEB_PAGE_H
+
+#include <Arduino.h>
+
+const char WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#12141a">
+<title>deciLight</title>
+<style>
+:root{--bg:#12141a;--card:#1c1f28;--line:#2c3140;--text:#e8eaf0;--dim:#8b92a6;
+--quiet:#00c853;--warn:#ffd600;--loud:#ff3d3d}
+*{box-sizing:border-box}
+body{margin:0;padding:16px;background:var(--bg);color:var(--text);
+font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+max-width:520px;margin-inline:auto;-webkit-text-size-adjust:100%}
+h1{font-size:15px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+color:var(--dim);margin:4px 0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+padding:18px;margin-bottom:14px}
+.level{display:flex;align-items:baseline;gap:12px}
+#dot{width:16px;height:16px;border-radius:50%;background:var(--dim);flex:none;
+align-self:center;transition:background .25s}
+#db{font-size:56px;font-weight:650;font-variant-numeric:tabular-nums;line-height:1}
+#units{color:var(--dim);font-size:15px}
+#note{color:var(--dim);font-size:13px;min-height:1.5em;margin-top:6px}
+.meter{--a:12%;--b:38%;position:relative;height:8px;border-radius:4px;margin-top:16px;
+background:linear-gradient(90deg,var(--quiet) 0 var(--a),var(--warn) var(--a) var(--b),var(--loud) var(--b) 100%)}
+#needle{position:absolute;top:-4px;width:3px;height:16px;border-radius:2px;
+background:var(--text);box-shadow:0 0 0 2px var(--card);transition:left .3s}
+.scale{display:flex;justify-content:space-between;color:var(--dim);
+font-size:12px;margin-top:6px}
+label{display:block;font-size:13px;color:var(--dim);margin:16px 0 6px}
+label:first-child{margin-top:0}
+label b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;margin:0;accent-color:#5b8cff;height:28px}
+.row{display:flex;gap:8px}
+button{flex:1;padding:11px 8px;border-radius:10px;border:1px solid var(--line);
+background:#242835;color:var(--text);font:inherit;font-size:14px;cursor:pointer;
+-webkit-tap-highlight-color:transparent}
+button:active{transform:scale(.97)}
+button.on{background:#5b8cff;border-color:#5b8cff;color:#0d1017;font-weight:600}
+button.zone{opacity:.45}
+button.zone.on{opacity:1}
+.sw{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;margin-top:12px}
+.sw i{aspect-ratio:1;border-radius:8px;border:1px solid #0006;cursor:pointer}
+.sw i:active{transform:scale(.9)}
+details{margin-top:2px}
+summary{color:var(--dim);font-size:13px;cursor:pointer;padding:4px 0;
+list-style:none;-webkit-tap-highlight-color:transparent}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"\25B8";display:inline-block;width:1.1em;
+transition:transform .15s;color:var(--dim)}
+details[open]>summary::before{transform:rotate(90deg)}
+summary.adv{color:var(--text);font-size:14px;font-weight:600}
+details.sub{border-top:1px solid var(--line);margin:0;padding:2px 0 2px 4px}
+details.sub:first-of-type{margin-top:10px}
+details.sub[open]{padding-bottom:10px}
+input[type=text],input[type=password]{width:100%;padding:10px;margin-top:8px;
+border-radius:10px;border:1px solid var(--line);background:#242835;
+color:var(--text);font:inherit;font-size:15px}
+.net{color:var(--dim);font-size:12px;text-align:center;margin:18px 0 4px}
+input[type=file]{width:100%;margin-top:8px;color:var(--dim);font-size:13px}
+.bar{height:6px;border-radius:3px;background:#242835;margin-top:12px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:#5b8cff;transition:width .2s}
+#otanote,#testnote,#irnote,#scrnote,#gnote,#roster,#cover{color:var(--dim);font-size:13px;margin-top:10px}
+#roster table{width:100%;border-collapse:collapse;margin-top:6px}
+#roster td{padding:6px 0;font-variant-numeric:tabular-nums;
+border-top:1px solid var(--line);vertical-align:middle}
+#roster tr:first-child td{border-top:0}
+#roster td.n{color:var(--text)}
+#roster td.r{text-align:right;white-space:nowrap}
+#roster a{color:#5b8cff;text-decoration:none}
+#roster a:hover{text-decoration:underline}
+#roster .z{display:inline-block;padding:3px 7px;margin-right:4px;border-radius:6px;
+border:1px solid var(--line);background:#242835;font-size:12px;cursor:pointer;opacity:.45}
+#roster .z.on{opacity:1;background:#5b8cff;border-color:#5b8cff;color:#0d1017;font-weight:600}
+#roster .me .z{cursor:default}
+#cover.warn{color:var(--warn)}
+label input[type=checkbox]{margin-right:8px;accent-color:#5b8cff}
+#testnote.live{color:var(--text);font-weight:600}
+#irnote b{color:var(--text);font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<h1>deciLight</h1>
+
+<div class="card">
+  <div class="level"><span id="dot"></span><span id="db">--</span><span id="units">dBA</span></div>
+  <div id="note"></div>
+  <div class="meter" id="meter"><div id="needle"></div></div>
+  <div class="scale"><span>30</span><span id="lo"></span><span id="hi"></span><span>110</span></div>
+</div>
+
+
+<div class="card">
+  <label>Activity Presets</label>
+  <div class="row" style="margin-bottom:14px">
+    <button id="pexam">Exam</button>
+    <button id="pquiet">Quiet Work</button>
+    <button id="pgroup">Group Work</button>
+  </div>
+  <label>Quiet below <b><span id="vmin"></span> dB</b></label>
+  <input type="range" id="smin" min="30" max="110">
+  <label>Too loud above <b><span id="vmax"></span> dB</b></label>
+  <input type="range" id="smax" min="30" max="110">
+  <label>Brightness <b><span id="vbri"></span>%</b></label>
+  <input type="range" id="sbri" min="10" max="255">
+</div>
+
+<div class="card">
+  <div class="row">
+    <button id="mauto">Auto</button>
+    <button id="moff">Off</button>
+  </div>
+  <div class="sw" id="sw"></div>
+</div>
+
+<div class="card">
+  <details>
+    <summary class="adv">Advanced</summary>
+
+    <details class="sub">
+      <summary>Group</summary>
+      <input type="text" id="gname" placeholder="Group name (blank = work alone)"
+             autocapitalize="off" autocorrect="off" maxlength="16">
+      <input type="text" id="uname" placeholder="This unit's name" maxlength="8"
+             autocapitalize="off" autocorrect="off">
+      <div class="row" style="margin-top:12px"><button id="gsave">Save and restart</button></div>
+      <label style="margin-top:16px"><input type="checkbox" id="glevel"> Follow the group's level</label>
+      <label>This unit lights for</label>
+      <div class="row">
+        <button id="zq" class="zone">Quiet</button>
+        <button id="zw" class="zone">Warn</button>
+        <button id="zl" class="zone">Loud</button>
+      </div>
+      <label>Combine <b><span id="vcomb"></span></b></label>
+      <div class="row">
+        <button id="cmax">Loudest</button>
+        <button id="cavg">Average</button>
+      </div>
+      <label>Inactive lamp <b><span id="vinact"></span></b></label>
+      <input type="range" id="sinact" min="0" max="255">
+      <div id="gnote"></div>
+      <div id="roster"></div>
+      <div id="cover"></div>
+    </details>
+
+    <details class="sub">
+      <summary>Screen</summary>
+      <label>Screen brightness <b><span id="vscr"></span></b></label>
+      <input type="range" id="sscr" min="0" max="255">
+      <div id="scrnote">The scale is weighted towards the dim end. Zero
+        switches the screen off entirely.</div>
+    </details>
+
+    <details class="sub">
+      <summary>Join a WiFi network</summary>
+      <input type="text" id="ssid" placeholder="Network name" autocapitalize="off" autocorrect="off">
+      <input type="password" id="pass" placeholder="Password">
+      <div class="row" style="margin-top:12px"><button id="wsave">Save and restart</button></div>
+    </details>
+
+    <details class="sub">
+      <summary>Diagnostics</summary>
+      <div class="row" style="margin-top:12px"><button id="testgo">Test the LEDs</button></div>
+      <div id="testnote">Cycles red, green, blue, white. If red and green look
+        swapped, the ring is RGB rather than GRB. Runs at the current brightness.</div>
+      <div id="irnote">No remote signal received yet.</div>
+    </details>
+
+    <details class="sub" id="otacard" hidden>
+      <summary>Update firmware</summary>
+      <input type="password" id="otapass" placeholder="Update password">
+      <input type="file" id="otafile" accept=".bin">
+      <div class="row" style="margin-top:12px"><button id="otago">Upload and restart</button></div>
+      <div class="bar" id="otabar" hidden><i id="otafill"></i></div>
+      <div id="otanote"></div>
+    </details>
+  </details>
+</div>
+
+<div class="net" id="net"></div>
+
+<script>
+var COLORS=["ff0000","ff4500","ff6347","ffa500","ffff00","00ff00","90ee90","008b8b",
+            "00ffff","87ceeb","0000ff","9370db","800080","dda0dd","40e0d0","ffffff"];
+var ZONE={quiet:"--quiet",warn:"--warn",loud:"--loud"};
+var $=function(i){return document.getElementById(i)};
+var busy=0, dragging=null, otaUser="";
+
+var sw=$("sw");
+COLORS.forEach(function(c){
+  var e=document.createElement("i");
+  e.style.background="#"+c;
+  e.onclick=function(){post("/api/mode","mode=manual&color="+c)};
+  sw.appendChild(e);
+});
+$("mauto").onclick=function(){post("/api/mode","mode=auto")};
+$("moff").onclick=function(){post("/api/mode","mode=off")};
+$("pexam").onclick=function(){post("/api/preset","preset=exam")};
+$("pquiet").onclick=function(){post("/api/preset","preset=quiet")};
+$("pgroup").onclick=function(){post("/api/preset","preset=group")};
+$("wsave").onclick=function(){
+  post("/api/wifi","ssid="+encodeURIComponent($("ssid").value)+
+                   "&pass="+encodeURIComponent($("pass").value));
+  $("net").textContent="Restarting...";
+};
+
+[["smin","dbMin"],["smax","dbMax"],["sbri","brightness"],
+ ["sscr","displayBrightness"]].forEach(function(p){
+  var el=$(p[0]);
+  el.addEventListener("input",function(){dragging=p[0];paint()});
+  el.addEventListener("change",function(){
+    dragging=null;
+    post("/api/set",p[1]+"="+el.value);
+  });
+});
+
+function post(url,body){
+  busy=1;
+  var x=new XMLHttpRequest();
+  x.open("POST",url,true);
+  x.setRequestHeader("Content-Type","application/x-www-form-urlencoded");
+  x.onload=function(){busy=0; if(x.status==200) render(JSON.parse(x.responseText))};
+  x.onerror=function(){busy=0};
+  x.send(body);
+}
+
+function paint(){
+  var lo=+$("smin").value, hi=+$("smax").value;
+  var a=(lo-30)/80*100, b=(hi-30)/80*100;
+  $("meter").style.setProperty("--a",a+"%");
+  $("meter").style.setProperty("--b",b+"%");
+  $("vmin").textContent=lo; $("vmax").textContent=hi;
+  $("lo").textContent=lo; $("hi").textContent=hi;
+  $("vbri").textContent=Math.round($("sbri").value/255*100);
+  var scr=+$("sscr").value;
+  $("vscr").textContent=scr==0 ? "off" : Math.round(scr/255*100)+"%";
+}
+
+function render(s){
+  $("db").textContent=s.db.toFixed(1);
+  $("units").textContent=s.units;
+  $("dot").style.background=s.mode=="auto"?"var("+(ZONE[s.zone]||"--dim")+")"
+          :(s.mode=="manual"?"#"+s.color:"var(--dim)");
+  $("note").textContent=s.quality=="overload"?"Above the microphone's range"
+          :s.quality=="quiet"?"Below the microphone's noise floor"
+          :s.mode=="manual"?"Holding a fixed colour"
+          :s.mode=="off"?"Light is off, still measuring":"";
+  $("needle").style.left="calc("+Math.max(0,Math.min(100,(s.db-30)/80*100))+"% - 1.5px)";
+  $("mauto").className=s.mode=="auto"?"on":"";
+  $("moff").className=s.mode=="off"?"on":"";
+  $("pexam").className=s.preset=="exam"?"on":"";
+  $("pquiet").className=s.preset=="quiet"?"on":"";
+  $("pgroup").className=s.preset=="group"?"on":"";
+
+  if(dragging!="smin") $("smin").value=s.dbMin;
+  if(dragging!="smax") $("smax").value=s.dbMax;
+  if(dragging!="sbri") $("sbri").value=s.brightness;
+  if(dragging!="sscr") $("sscr").value=s.displayBrightness;
+  paint();
+  $("otacard").hidden=!s.ota;
+  otaUser=s.otaUser||"";
+
+  var t=$("testnote");
+  if(s.test){
+    t.textContent="Showing "+s.test.toUpperCase()+" - the ring should match.";
+    t.className="live";
+  }else if(t.className=="live"){
+    t.textContent="Test finished.";
+    t.className="";
+  }
+  $("irnote").innerHTML=irLine(s);
+  renderGroup(s);
+  renderRoster(s);
+  $("net").textContent=s.name+" "+s.version+" \u00b7 "+(s.net=="ap"
+    ? "Access point "+s.ssid
+    : "Connected to "+s.ssid)+" \u00b7 "+s.ip;
+}
+
+$("testgo").onclick=function(){ post("/api/test",""); };
+
+var ZQ=1, ZW=2, ZL=4, zoneBits=7;
+function postGroup(extra){ post("/api/group",extra); }
+$("gsave").onclick=function(){
+  postGroup("group="+encodeURIComponent($("gname").value)+
+            "&unit="+encodeURIComponent($("uname").value));
+  $("gnote").textContent="Saving and restarting...";
+};
+$("glevel").onchange=function(){ postGroup("groupLevel="+(this.checked?1:0)); };
+[["zq",ZQ],["zw",ZW],["zl",ZL]].forEach(function(z){
+  $(z[0]).onclick=function(){ postGroup("zones="+(zoneBits^z[1])); };
+});
+$("cmax").onclick=function(){ postGroup("combine=0"); };
+$("cavg").onclick=function(){ postGroup("combine=1"); };
+$("sinact").addEventListener("input",function(){ dragging="sinact"; });
+$("sinact").addEventListener("change",function(){
+  dragging=null;
+  postGroup("inactiveLevel="+this.value);
+});
+
+var ZONE_NAMES=["quiet","warn","loud"];
+function missingZones(mask){
+  var out=[];
+  for(var i=0;i<3;i++) if(!(mask&(1<<i))) out.push(ZONE_NAMES[i]);
+  return out;
+}
+function listedZones(mask){
+  var out=[];
+  for(var i=0;i<3;i++) if(mask&(1<<i)) out.push(ZONE_NAMES[i]);
+  return out.length==3?"all":(out.join("+")||"none");
+}
+
+// Zone chips are clickable for peers, so a stack can be laid out from
+// whichever unit happens to be open. The row for this unit is not editable
+// here - its own controls are directly above.
+function zoneChips(id, zones, editable){
+  var out="";
+  for(var i=0;i<3;i++){
+    var bit=1<<i, on=(zones&bit)?" on":"";
+    out+= editable
+      ? "<span class='z"+on+"' data-id='"+id+"' data-bit='"+bit+"'>"+ZONE_NAMES[i]+"</span>"
+      : "<span class='z"+on+"'>"+ZONE_NAMES[i]+"</span>";
+  }
+  return out;
+}
+
+function renderRoster(s){
+  var rows="";
+  (s.roster||[]).forEach(function(p){
+    var age=p.ageMs<1500?"":" <span style=\"opacity:.6\">"+Math.round(p.ageMs/1000)+"s</span>";
+    var label = (p.ip && p.ip!="0.0.0.0")
+      ? "<a href='http://"+p.ip+"/'>"+p.name+"</a>" : p.name;
+    rows+="<tr data-id='"+p.id+"' data-zones='"+p.zones+"' data-inact='"+p.inactiveLevel+"'>"+
+          "<td class=n>"+label+"</td>"+
+          "<td>"+zoneChips(p.id,p.zones,true)+"</td>"+
+          "<td class=r>"+p.db.toFixed(1)+age+"</td></tr>";
+  });
+  $("roster").innerHTML = rows
+    ? "<table><tr class=me><td class=n>"+s.unit+" <span style=\"opacity:.6\">(this one)</span></td>"+
+      "<td>"+zoneChips("",s.zones,false)+"</td>"+
+      "<td class=r>"+s.db.toFixed(1)+"</td></tr>"+rows+"</table>"
+    : "";
+
+  // Delegated because the table is rebuilt on every poll.
+  $("roster").onclick=function(e){
+    var chip=e.target;
+    if(!chip.dataset || !chip.dataset.bit) return;
+    var row=chip.parentNode.parentNode;
+    var zones=(+row.dataset.zones)^(+chip.dataset.bit);
+    if(!zones) return;                       // refused, as on the unit itself
+    post("/api/peer","id="+chip.dataset.id+"&zones="+zones+
+         "&groupLevel=1&inactiveLevel="+row.dataset.inact);
+  };
+
+  // A gap leaves a band unlit and an overlap lights two lamps at once; both
+  // look like faults rather than settings.
+  var c=$("cover");
+  if(!s.groupLevel || !s.roster || !s.roster.length){ c.textContent=""; c.className=""; return; }
+  var gaps=missingZones(s.coverage), dbl=listedZones(s.overlap);
+  var msg=[];
+  if(gaps.length) msg.push("nothing in the group lights for "+gaps.join(" or "));
+  if(s.overlap) msg.push("more than one unit lights for "+dbl);
+  c.textContent=msg.join("; ");
+  c.className=msg.length?"warn":"";
+}
+
+function renderGroup(s){
+  if(document.activeElement!=$("gname")) $("gname").value=s.group||"";
+  if(document.activeElement!=$("uname")) $("uname").value=s.unit||"";
+  $("glevel").checked=!!s.groupLevel;
+  zoneBits=s.zones;
+  $("zq").className=(s.zones&ZQ)?"zone on":"zone";
+  $("zw").className=(s.zones&ZW)?"zone on":"zone";
+  $("zl").className=(s.zones&ZL)?"zone on":"zone";
+  $("cmax").className=s.combine==0?"on":"";
+  $("cavg").className=s.combine==1?"on":"";
+  $("vcomb").textContent=s.combine==1?"average":"loudest";
+  if(dragging!="sinact") $("sinact").value=s.inactiveLevel;
+  $("vinact").textContent=s.inactiveLevel==0?"dark":Math.round(s.inactiveLevel/255*100)+"%";
+  $("gnote").innerHTML = !s.group ? "Working alone. Give two units the same name to link them."
+    : !s.groupActive ? "Group <b>"+s.group+"</b> is configured but the radio did not start."
+    : "Group <b>"+s.group+"</b> on channel "+s.channel+", <b>"+s.peers+
+      "</b> peer"+(s.peers==1?"":"s")+" heard."+
+      (s.peers==0?" Peers must be on the same channel.":"");
+}
+
+function irLine(s){
+  if(!s.irCode) return "No remote signal received yet.";
+  var age=s.irAgeMs<1000 ? "just now"
+        : s.irAgeMs<60000 ? Math.round(s.irAgeMs/1000)+"s ago"
+        : Math.round(s.irAgeMs/60000)+"m ago";
+  return (s.irMapped?"Mapped key ":"Unmapped code ")+"<b>"+s.irCode+"</b> ("+
+         s.irProtocol+"), "+age;
+}
+
+$("otago").onclick=function(){
+  var f=$("otafile").files[0];
+  if(!f){ $("otanote").textContent="Choose a .bin file first."; return; }
+  var pass=$("otapass").value;
+  if(!pass){ $("otanote").textContent="Enter the update password."; return; }
+
+  var auth;
+  try{
+    auth="Basic "+btoa(otaUser+":"+pass);
+  }catch(e){
+    // btoa only handles latin1; a password outside it cannot be encoded here.
+    $("otanote").textContent="Password contains characters this page cannot send.";
+    return;
+  }
+
+  var fd=new FormData(); fd.append("firmware",f,f.name);
+  var x=new XMLHttpRequest();
+  x.open("POST","/api/update",true);
+  // Sent up front rather than relying on the user/password arguments of
+  // open(): those are only used to answer a 401 challenge, so with a request
+  // this large the body would be uploaded once, rejected, and uploaded again.
+  x.setRequestHeader("Authorization",auth);
+  busy=1;
+  $("otabar").hidden=false;
+  x.upload.onprogress=function(e){
+    if(e.lengthComputable) $("otafill").style.width=(e.loaded/e.total*100)+"%";
+  };
+  x.onload=function(){
+    busy=0;
+    if(x.status==200){
+      $("otanote").textContent="Uploaded. The light is restarting.";
+    }else{
+      var msg="Update failed.";
+      try{ msg=JSON.parse(x.responseText).error||msg; }catch(_){}
+      $("otanote").textContent=msg;
+      $("otafill").style.width="0";
+    }
+  };
+  x.onerror=function(){
+    busy=0;
+    // The unit resets as soon as it has the image, so the connection dropping
+    // at the very end is the expected ending, not a failure.
+    $("otanote").textContent="Connection closed - if the upload completed, the light is restarting.";
+  };
+  x.send(fd);
+};
+
+function poll(){
+  if(busy||dragging) return;
+  var x=new XMLHttpRequest();
+  x.open("GET","/api/state",true);
+  x.onload=function(){if(x.status==200) render(JSON.parse(x.responseText))};
+  x.send();
+}
+poll(); setInterval(poll,500);
+</script>
+</body>
+</html>)HTML";
+
+#endif  // DECILIGHT_WEB_PAGE_H

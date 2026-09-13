@@ -1,0 +1,153 @@
+name: Build firmware
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Pinned rather than floating. A firmware repo wants reproducible builds more
+# than it wants early warning of upstream churn.
+#
+# FastLED is held at 3.9.20 deliberately. The 3.10 series moved to a unity
+# build that pulls in the whole libstdc++ locale stack, which costs roughly
+# 440KB of flash for a project that only ever shows solid colours on seven
+# LEDs. Read the size budget below before raising this pin.
+env:
+  BOARD_URL: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+  ESP32_CORE: esp32:esp32@2.0.5
+  LIB_FASTLED: FastLED@3.9.20
+  LIB_IRREMOTE: IRremoteESP8266@2.9.0
+  # The SSD1306 status screen. BusIO and GFX are pulled in as dependencies but
+  # are pinned explicitly so a build is reproducible from this file alone.
+  LIB_SSD1306: "Adafruit SSD1306@2.5.17"
+  LIB_GFX: "Adafruit GFX Library@1.12.6"
+  LIB_BUSIO: "Adafruit BusIO@1.17.4"
+
+  # IRremoteESP8266 compiles support for around a hundred protocols by
+  # default. This project needs NEC, plus the hash fallback that lets an
+  # unrecognised remote still be identified from the serial log. Optional -
+  # the firmware builds and fits without it, just about 51KB larger.
+  IR_FLAGS: >-
+    -D_IR_ENABLE_DEFAULT_=false
+    -DDECODE_NEC=true
+    -DSEND_NEC=true
+    -DDECODE_HASH=true
+
+  # Fails the build well before the stock 1310720-byte application partition
+  # fills up. Its real job is to catch a dependency quietly ballooning, which
+  # is how this project ended up 440KB heavier than it needed to be.
+  FLASH_BUDGET: "1050000"
+
+jobs:
+  # Runs first in practice: no toolchain to download, so it fails fast on a
+  # logic regression while the firmware build is still installing the core.
+  test:
+    name: host tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run
+        run: make -C test check
+
+      # The dev server stands in for a real unit while the UI is worked on, so
+      # its JSON has to stay in step with what the firmware actually sends.
+      - name: Check the dev server matches the firmware's API
+        run: ./tools/dev-server.py --check
+
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The two supported boards. Both carry an ESP-WROOM-32, so the
+          # firmware source is identical between them and only the board
+          # definition differs - but building both keeps it that way.
+          - name: FireBeetle ESP32
+            id: firebeetle
+            fqbn: esp32:esp32:firebeetle32
+            extra_flags: ""
+            artifacts: true
+
+          - name: ESP-WROOM-32 dev board
+            id: wroom32
+            # FlashFreq=80 matches the FireBeetle; the generic board
+            # definition would otherwise default the flash clock to 40MHz.
+            fqbn: esp32:esp32:esp32:FlashFreq=80
+            extra_flags: ""
+            artifacts: true
+
+          # Guards the compile-time switch, which is easy to break by adding an
+          # unguarded include or call. Board-independent, so one build covers it.
+          - name: FEATURE_WIFI=0
+            id: nowifi
+            fqbn: esp32:esp32:firebeetle32
+            extra_flags: "-DFEATURE_WIFI=0"
+            artifacts: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Arduino core and libraries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.arduino15
+            ~/Arduino/libraries
+          # The ESP32 core is a few hundred megabytes, so a miss costs several
+          # minutes. Keyed on the pinned versions above.
+          key: arduino-${{ runner.os }}-${{ env.ESP32_CORE }}-${{ env.LIB_FASTLED }}-${{ env.LIB_IRREMOTE }}-${{ env.LIB_SSD1306 }}
+
+      - name: Install arduino-cli
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install core and libraries
+        run: |
+          arduino-cli core update-index --additional-urls "$BOARD_URL"
+          arduino-cli core install --additional-urls "$BOARD_URL" "$ESP32_CORE"
+          arduino-cli lib install "$LIB_FASTLED" "$LIB_IRREMOTE" \
+                                  "$LIB_SSD1306" "$LIB_GFX" "$LIB_BUSIO"
+
+      - name: Compile
+        run: |
+          arduino-cli compile --clean --fqbn "${{ matrix.fqbn }}" --output-dir build \
+            --warnings default \
+            --build-property "compiler.cpp.extra_flags=$IR_FLAGS ${{ matrix.extra_flags }}" \
+            . 2>&1 | tee compile.log
+          # tee swallows the exit status, so check the pipe explicitly.
+          exit "${PIPESTATUS[0]}"
+
+      - name: Check size against the budget
+        run: |
+          used=$(grep -oP 'Sketch uses \K[0-9]+' compile.log)
+          if [ -z "$used" ]; then
+            echo "could not read the size from the build log"; exit 1
+          fi
+          echo "flash used: $used, budget: $FLASH_BUDGET"
+          if [ "$used" -gt "$FLASH_BUDGET" ]; then
+            echo "::error::firmware grew to $used bytes, over the $FLASH_BUDGET budget."
+            echo "::error::Check whether a dependency was updated before raising the budget."
+            exit 1
+          fi
+
+      - name: Report size
+        run: |
+          {
+            echo "### ${{ matrix.name }}"
+            echo
+            echo '```'
+            grep -E "Sketch uses|Global variables" compile.log || echo "no size line found"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Only the .bin files. The .elf and .map are tens of megabytes and are
+      # not worth carrying.
+      - name: Upload firmware
+        if: matrix.artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: decilight-${{ matrix.id }}-${{ github.sha }}
+          path: build/*.bin
+          if-no-files-found: error
