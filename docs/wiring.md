@@ -2,6 +2,8 @@
 
 Every module in a deciLight, and how it attaches to the ESP32.
 
+![Wiring](../misc/wiring.svg)
+
 ## Boards
 
 Two boards are supported, and the wiring below is the same for both:
@@ -45,6 +47,8 @@ and are only a convention.
 | 3.3V                 | -    | Mic, IR, OLED    |                                  |
 | 5V                   | -    | Ring `5V`        | See the power note               |
 | Ground               | -    | Everything       | Must be common                   |
+| Pogo pads (top face)    | -    | Pogo pins on the unit above | 5V/GND in from the stack - see the power note |
+| Pogo pins (bottom face) | -    | Pogo pads on the unit below | 5V/GND out to the stack - see the power note  |
 
 The three I2S pins are the ones set in `config.h`, and unlike some chips the
 ESP32 can route them to almost any free pin, so they are a convention rather
@@ -84,6 +88,14 @@ of the input-only pins.
             GND  ───────────────  GND
    GPIO22 / SCL  ───────────────  SCL
    GPIO21 / SDA  ───────────────  SDA
+
+
+   5V / GND rail                 Pogo Pin Power (stacking)
+   ─────────────                 ──────────────────────────
+       5V rail  ───────────────  Pad (+)      top face, in from the unit above
+      GND rail  ───────────────  Pad (−)      top face, in from the unit above
+       5V rail  ───────────────  Pogo pin (+) bottom face, out to the unit below
+      GND rail  ───────────────  Pogo pin (−) bottom face, out to the unit below
 ```
 
 ## Two pins worth knowing about
@@ -157,49 +169,82 @@ from the 5V supply directly and tie the grounds together. The 3.3V rail
 comfortably handles the microphone, the IR receiver and the display between
 them - single-digit milliamps in total.
 
-### Dual-USB Daisy-Chain Powering (Multi-Unit Stacks)
+### Pogo Pin Power Pass-Through (Multi-Unit Stacks)
 
 When building multiple units to form a stacked traffic signal or mirrored room,
-you can equip each unit's enclosure with **two USB power ports** (USB Power In
-and USB Power Out) wired in parallel. This allows powering an entire stack from
-a single wall charger plugged into the first unit, with short USB jumper cables
-daisychaining power to the rest.
+each unit's enclosure carries **two spring-loaded pogo pins on its bottom
+face** and **two flat contact pads on its top face**, both in the same V+/GND
+layout. Stacking one unit on another closes the connection with no cable: the
+pins on the underside of the upper unit land on the pads on top of the lower
+one, and 5V/GND ride straight through the stack. Only the bottom-most unit
+needs an external supply - a barrel jack or a USB power-only input both work -
+everything above it is powered entirely through the pogo connections.
 
 ```
-  USB Wall Adapter (5V 2A+)
+  5V supply (sized per the table below)
            │
-           ▼ [USB In]
-      ┌──────────┐  [USB Out] ──USB Cable──► [USB In]
-      │ Unit #1  │                           ┌──────────┐
-      └──────────┘                           │ Unit #2  │ ──► [Unit #3]
-                                             └──────────┘
+           ▼
+      ┌──────────┐
+      │ Unit #1  │  pogo pins (bottom face)
+      └──────────┘        │
+                           ▼ spring contact
+      ┌──────────┐  pads (top face)
+      │ Unit #2  │  pogo pins (bottom face)
+      └──────────┘        │
+                           ▼ spring contact
+      ┌──────────┐  pads (top face)
+      │ Unit #3  │
+      └──────────┘
 ```
 
-**Wiring Dual USB Ports in Parallel:**
+**Wiring the pass-through:**
 
 ```
-   USB Port 1 (Power In)           USB Port 2 (Pass-Through Out)
-   ─────────────────────           ────────────────────────────
-          VBUS / 5V  ────────┬────  VBUS / 5V
-                GND  ──────┬─┼────  GND
-                           │ │
-                     ESP32 │ │ NeoPixel Ring
-                     ───── │ │ ─────────────
-                       5V ─┘ └─ 5V
-                      GND ────  GND
+   Top face (in)                  5V rail                Bottom face (out)
+   ──────────────                 ───────                ─────────────────
+   Pad (+)  ──────────────────┬────  +5V  ────┬──────────  Pogo pin (+)
+   Pad (−)  ──────────────────┤     GND  ─────┤──────────  Pogo pin (−)
+                               │               │
+                          ESP32 5V/VIN     ESP32 GND
+                          LED ring 5V      LED ring GND
 ```
 
-1. Connect **VBUS / 5V** of USB Port 1 to **VBUS / 5V** of USB Port 2, the ESP32 `5V` (or `VIN`) pad, and the NeoPixel `5V` wire.
-2. Connect **GND** of USB Port 1 to **GND** of USB Port 2, ESP32 `GND`, and the NeoPixel `GND` wire.
-3. Data lines (`D+` / `D-`) on Port 2 can be left unconnected.
+1. Wire both top-face pads directly onto the unit's 5V and GND rails - the
+   same rails the ESP32's `5V`/`VIN` pad and the LED ring draw from.
+2. Wire both bottom-face pogo pins to the same two rails, so whatever the unit
+   receives from above (or from its own supply, if it sits at the bottom of
+   the stack) passes straight through to the unit below.
+3. The 3.3V rail for the mic, IR receiver and OLED is generated locally by
+   each unit's own regulator, same as a standalone build - only 5V and GND
+   cross the pogo connection.
 
-> [!NOTE]
-> **Optional for Single-Unit Builds**: Adding the second USB pass-through port is **completely optional**. If you are building only one standalone unit, a single USB power port (or the ESP32 dev board's onboard USB port for bench testing) is all you need.
+> [!WARNING]
+> **Key the connector, or protect against reversal.** Nothing about two round
+> pads stops a unit from landing rotated the wrong way if the enclosure
+> doesn't physically prevent it, and 5V on the GND pad lets the smoke out.
+> Either make the pin/pad spacing asymmetric so a reversed unit doesn't seat,
+> or add a series reverse-polarity protection diode (or a P-channel MOSFET, if
+> the diode drop stacks up across several units) ahead of each unit's own
+> rail.
 
-#### Power Supply Budgeting for Daisy Chains
-- **1 Unit**: ~420mA max (~200mA typ) → Standard 5V 1A USB adapter.
-- **3 Units (Stack)**: ~1.25A max (~600mA typ) → 5V 2A or 2.4A USB power adapter.
-- **4+ Units**: ~1.7A+ max → 5V 3A USB power adapter with quality USB cables to prevent voltage drop across the chain.
+#### Power Supply Budgeting for Pogo Stacks
+
+The load is the same as ever - this only changes how the current gets there,
+and it changes what the bottom-most connector has to carry, since every unit
+above it draws through that one pair of pins:
+
+- **1 unit**: ~420mA max (~200mA typ) → a standard 5V 1A supply wired directly
+  in; no pogo pins needed.
+- **3 units (stack)**: ~1.25A max (~600mA typ) through the bottom connector →
+  a 5V 2A or 2.4A supply, and pogo pins rated at least 1.5A each with margin.
+- **4+ units**: ~1.7A+ max through the bottom connector → a 5V 3A supply, and
+  either pogo pins rated 3A+ or two pins per polarity in parallel - a spring
+  pin under load is a point of failure, and doubling them buys tolerance for
+  one that isn't seating cleanly.
+
+Pogo pin contact resistance rises with wear and dirt long before a connection
+opens outright, so a stack that has sat on a shelf a while is worth reseating
+- a few insertion cycles - before trusting it under full load.
 
 A 1000µF capacitor across the ring's 5V and ground steadies things if the LEDs
 flicker on a sudden brightness change, and the 330R resistor in the data line

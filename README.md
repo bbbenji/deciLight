@@ -60,11 +60,7 @@ Networked synchronisation, the external display and controlling several units fr
 
 Pin assignments and hookup diagrams for every module are in [docs/wiring.md](docs/wiring.md); [pins.txt](pins.txt) is the same information in short form.
 
-### Schematic:
-
-Note that this predates the optional OLED; [docs/wiring.md](docs/wiring.md) is the current reference and covers the screen.
-
-![Screenshot from 2024-02-13 23-50-47](https://github.com/bbbenji/deciLight/assets/1678118/5957b364-939a-45fc-963b-7a0aaaa96e0c)
+![Wiring](misc/wiring.svg)
 
 ### Firmware:
 
@@ -76,24 +72,24 @@ For alternative functionality, consider flashing deciLight with WLED, offering s
 
 The sketch is split by responsibility, so that adding a feature usually means touching one file. `deciLight.ino` itself is only wiring.
 
-| File | Responsibility |
-| --- | --- |
-| `deciLight.ino` | `setup()` and `loop()`, nothing else |
-| `config.h` | Every tunable value - pins, microphone datasheet figures, thresholds, colours, timing. No logic |
-| `settings.{h,cpp}` | Thresholds and brightness, clamped to safe ranges and persisted to NVS |
-| `sound_level.{h,cpp}` | I2S sampling task, IIR filtering, Leq in dB |
-| `signal_light.{h,cpp}` | LED state, colour mapping, smoothing and hysteresis |
-| `remote_control.{h,cpp}` | IR key map and what each key does |
-| `web_control.{h,cpp}` | WiFi bring-up and the HTTP control interface |
-| `web_page.h` | The control page, served from flash |
-| `ota.{h,cpp}` | Over-the-air firmware updates |
-| `display.{h,cpp}` | Optional SSD1306 status screen |
-| `group_sync.{h,cpp}` | ESP-NOW link between units: level sharing, and relaying settings, mode and the self test |
-| `tools/dev-server.py` | Serves the control page against a simulated device, for working on the UI without hardware |
-| `sos-iir-filter.h` | Second-Order Sections filter kernel, with a hand-written Xtensa assembly inner loop. Upstream code from [esp32-i2s-slm](https://github.com/ikostoski/esp32-i2s-slm), unmodified |
-| `math/*.m` | GNU Octave scripts that generate the equaliser coefficients for each supported microphone |
+| File                     | Responsibility                                                                                                                                                                  |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deciLight.ino`          | `setup()` and `loop()`, nothing else                                                                                                                                            |
+| `config.h`               | Every tunable value - pins, microphone datasheet figures, thresholds, colours, timing. No logic                                                                                 |
+| `settings.{h,cpp}`       | Thresholds and brightness, clamped to safe ranges and persisted to NVS                                                                                                          |
+| `sound_level.{h,cpp}`    | I2S sampling task, IIR filtering, Leq in dB                                                                                                                                     |
+| `signal_light.{h,cpp}`   | LED state, colour mapping, smoothing and hysteresis                                                                                                                             |
+| `remote_control.{h,cpp}` | IR key map and what each key does                                                                                                                                               |
+| `web_control.{h,cpp}`    | WiFi bring-up and the HTTP control interface                                                                                                                                    |
+| `web_page.h`             | The control page, served from flash                                                                                                                                             |
+| `ota.{h,cpp}`            | Over-the-air firmware updates                                                                                                                                                   |
+| `display.{h,cpp}`        | Optional SSD1306 status screen                                                                                                                                                  |
+| `group_sync.{h,cpp}`     | ESP-NOW link between units: level sharing, and relaying settings, mode and the self test                                                                                        |
+| `tools/dev-server.py`    | Serves the control page against a simulated device, for working on the UI without hardware                                                                                      |
+| `sos-iir-filter.h`       | Second-Order Sections filter kernel, with a hand-written Xtensa assembly inner loop. Upstream code from [esp32-i2s-slm](https://github.com/ikostoski/esp32-i2s-slm), unmodified |
+| `math/*.m`               | GNU Octave scripts that generate the equaliser coefficients for each supported microphone                                                                                       |
 
-`sos-iir-filter.h` emits its filter kernel as file-scope assembly, so it *defines* symbols rather than declaring them. It must be included from exactly one translation unit - currently `sound_level.cpp`. Including it anywhere else will fail at link time with duplicate definitions.
+`sos-iir-filter.h` emits its filter kernel as file-scope assembly, so it _defines_ symbols rather than declaring them. It must be included from exactly one translation unit - currently `sound_level.cpp`. Including it anywhere else will fail at link time with duplicate definitions.
 
 #### How it works
 
@@ -124,17 +120,17 @@ The page shows the current level against a coloured scale, and offers sliders fo
 
 Behind the page is a small HTTP API, if you would rather script it:
 
-| Endpoint | Purpose |
-| --- | --- |
-| `GET /api/state` | Level, quality, mode, zone, thresholds, brightness, network status and firmware version, as JSON |
+| Endpoint           | Purpose                                                                                                                                                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/state`   | Level, quality, mode, zone, thresholds, brightness, network status and firmware version, as JSON                                                                                                                              |
 | `GET /api/version` | Just the product name and firmware version. Separate from `/api/state` so checking what a unit is running does not require pulling a live measurement - which is the question worth asking right after an over-the-air update |
-| `POST /api/set` | `dbMin`, `dbMax`, `brightness`, `displayBrightness` - any subset |
-| `POST /api/mode` | `mode=auto`, `mode=off`, or `mode=manual&color=RRGGBB` |
-| `POST /api/test` | Runs the LED self test, on the whole group |
-| `POST /api/group` | `group`, `unit`, `groupLevel`, `zones`, `combine`, `inactiveLevel` - any subset. Changing the group name restarts the unit |
-| `POST /api/peer` | `id` plus `zones`, `groupLevel`, `inactiveLevel` - configures one other unit in the group. `id` is a peer's MAC in hex, from the roster |
-| `POST /api/wifi` | `ssid`, `pass` - saved to flash, then the unit restarts |
-| `POST /api/update` | Multipart firmware upload. Requires HTTP basic auth, and is refused entirely unless `OTA_PASSWORD` is set |
+| `POST /api/set`    | `dbMin`, `dbMax`, `brightness`, `displayBrightness` - any subset                                                                                                                                                              |
+| `POST /api/mode`   | `mode=auto`, `mode=off`, or `mode=manual&color=RRGGBB`                                                                                                                                                                        |
+| `POST /api/test`   | Runs the LED self test, on the whole group                                                                                                                                                                                    |
+| `POST /api/group`  | `group`, `unit`, `groupLevel`, `zones`, `combine`, `inactiveLevel` - any subset. Changing the group name restarts the unit                                                                                                    |
+| `POST /api/peer`   | `id` plus `zones`, `groupLevel`, `inactiveLevel` - configures one other unit in the group. `id` is a peer's MAC in hex, from the roster                                                                                       |
+| `POST /api/wifi`   | `ssid`, `pass` - saved to flash, then the unit restarts                                                                                                                                                                       |
+| `POST /api/update` | Multipart firmware upload. Requires HTTP basic auth, and is refused entirely unless `OTA_PASSWORD` is set                                                                                                                     |
 
 Every value is clamped by the same code that guards the remote, so no request can produce an unusable device.
 
@@ -202,7 +198,7 @@ The hardware-independent modules - settings, the signal light's colour and dampe
 make -C test check
 ```
 
-They run in under a second and cover threshold clamping, hysteresis, smoothing, mode behaviour, deferred flash writes, and every one of the 24 remote keys individually. See [test/README.md](test/README.md) for what is deliberately *not* covered.
+They run in under a second and cover threshold clamping, hysteresis, smoothing, mode behaviour, deferred flash writes, and every one of the 24 remote keys individually. See [test/README.md](test/README.md) for what is deliberately _not_ covered.
 
 The web interface can be worked on without a board too. `tools/dev-server.py` serves the real page from `web_page.h` against a simulated unit, reading the thresholds, limits and colours out of `config.h` so the mock cannot drift from the firmware:
 
@@ -236,17 +232,17 @@ Each unit broadcasts what its microphone hears a few times a second, and each wo
 
 Three per-unit settings compose into every arrangement:
 
-| Setting | What it does |
-| --- | --- |
-| Follow the group's level | Light from the group's reading rather than this unit's own microphone |
-| Zones | Which of quiet, warn and loud this unit lights for. All three by default, which is how a lone light behaves |
-| Combine | Whether the group's level is the loudest reading or the average of them. Shared across the group, unlike the two above - two units disagreeing about it would quietly show different colours from the same readings |
+| Setting                  | What it does                                                                                                                                                                                                        |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Follow the group's level | Light from the group's reading rather than this unit's own microphone                                                                                                                                               |
+| Zones                    | Which of quiet, warn and loud this unit lights for. All three by default, which is how a lone light behaves                                                                                                         |
+| Combine                  | Whether the group's level is the loudest reading or the average of them. Shared across the group, unlike the two above - two units disagreeing about it would quietly show different colours from the same readings |
 
 A **traffic-light stack** is three units with follow-group on, one zone each, and combine set to average - they hear the same sound, so averaging cancels per-microphone variation. Exactly one lamp is lit at a time, like a real signal. A **mirrored room** is all three zones on every unit with combine set to loudest, so any noisy corner turns the whole room red. A unit with follow-group off ignores the others entirely. Two units make a stack too, with one of them covering a pair of zones so there is no dead band.
 
 What an inactive lamp shows is configurable: dark like a real traffic signal, or a faint glow so the stack still reads as one and a dead unit is distinguishable from an unlit one.
 
-Zone masks, group name, screen brightness and the inactive level are deliberately *not* shared. They describe a unit's place in the arrangement rather than the room, and copying them would collapse a stack into three identical lights.
+Zone masks, group name, screen brightness and the inactive level are deliberately _not_ shared. They describe a unit's place in the arrangement rather than the room, and copying them would collapse a stack into three identical lights.
 
 Each unit carries a short name, and the Group section shows a roster: every peer it can hear, which zones that peer lights for, the level it is reporting, and a link straight to that unit's own page. An anonymous peer count is hard to act on; a roster makes a deaf or dead unit obvious. Units with no name set fall back to the last bytes of their MAC, so a roster is readable before anything is configured.
 
@@ -268,31 +264,31 @@ Set `FEATURE_ESPNOW` to 0 to leave all of it out, which saves about 9KB.
 
 Almost everything worth changing is a named constant in `config.h`:
 
-| Constant | Purpose |
-| --- | --- |
-| `PIN_*` | Pin assignment, matching `pins.txt` |
-| `DB_MIN_DEFAULT`, `DB_MAX_DEFAULT` | Thresholds a factory-fresh unit starts with |
-| `DB_LIMIT_LOW`, `DB_LIMIT_HIGH` | How far the remote may push the thresholds |
-| `DB_SMOOTHING` | How quickly the light reacts. 1.0 is instant, lower is calmer |
-| `DB_HYSTERESIS` | dB of overshoot needed before the colour changes |
-| `COLOR_QUIET`, `COLOR_WARN`, `COLOR_LOUD` | The three signal colours, `0xRRGGBB` |
-| `LED_COUNT`, `LED_BRIGHTNESS_*` | LED ring size and brightness range |
-| `LED_PSU_VOLTS`, `LED_PSU_MILLIAMPS` | Power budget FastLED dims against, rather than browning out the regulator |
-| `MIC_*` | Microphone datasheet figures. `MIC_OFFSET_DB` is the linear calibration against a reference meter |
-| `MIC_EQUALIZER`, `MIC_WEIGHTING` | Which filters to apply. Set the weighting to `C_weighting` or `None`, and update `DB_UNITS` to match |
-| `FEATURE_WIFI` | Build with or without networking and the web interface |
-| `FEATURE_DISPLAY` | Build with or without the OLED status screen |
-| `FEATURE_ESPNOW` | Build with or without group synchronisation |
-| `GROUP_BROADCAST_MS`, `GROUP_PEER_TIMEOUT_MS` | How often a unit speaks, and how long a silent peer still counts |
-| `GROUP_COMMAND_REPEATS`, `GROUP_COMMAND_GAP_MS` | How many times a command is sent, and how far apart |
-| `WIFI_AP_CHANNEL` | Channel the fallback access point uses, so un-networked units share one |
+| Constant                                           | Purpose                                                                                                          |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `PIN_*`                                            | Pin assignment, matching `pins.txt`                                                                              |
+| `DB_MIN_DEFAULT`, `DB_MAX_DEFAULT`                 | Thresholds a factory-fresh unit starts with                                                                      |
+| `DB_LIMIT_LOW`, `DB_LIMIT_HIGH`                    | How far the remote may push the thresholds                                                                       |
+| `DB_SMOOTHING`                                     | How quickly the light reacts. 1.0 is instant, lower is calmer                                                    |
+| `DB_HYSTERESIS`                                    | dB of overshoot needed before the colour changes                                                                 |
+| `COLOR_QUIET`, `COLOR_WARN`, `COLOR_LOUD`          | The three signal colours, `0xRRGGBB`                                                                             |
+| `LED_COUNT`, `LED_BRIGHTNESS_*`                    | LED ring size and brightness range                                                                               |
+| `LED_PSU_VOLTS`, `LED_PSU_MILLIAMPS`               | Power budget FastLED dims against, rather than browning out the regulator                                        |
+| `MIC_*`                                            | Microphone datasheet figures. `MIC_OFFSET_DB` is the linear calibration against a reference meter                |
+| `MIC_EQUALIZER`, `MIC_WEIGHTING`                   | Which filters to apply. Set the weighting to `C_weighting` or `None`, and update `DB_UNITS` to match             |
+| `FEATURE_WIFI`                                     | Build with or without networking and the web interface                                                           |
+| `FEATURE_DISPLAY`                                  | Build with or without the OLED status screen                                                                     |
+| `FEATURE_ESPNOW`                                   | Build with or without group synchronisation                                                                      |
+| `GROUP_BROADCAST_MS`, `GROUP_PEER_TIMEOUT_MS`      | How often a unit speaks, and how long a silent peer still counts                                                 |
+| `GROUP_COMMAND_REPEATS`, `GROUP_COMMAND_GAP_MS`    | How many times a command is sent, and how far apart                                                              |
+| `WIFI_AP_CHANNEL`                                  | Channel the fallback access point uses, so un-networked units share one                                          |
 | `WIFI_RETRY_INTERVAL_MS`, `WIFI_FALLBACK_AFTER_MS` | How often a unit in fallback retries its network, and how long a dropped connection is given before falling back |
-| `FIRMWARE_VERSION`, `PRODUCT_NAME` | Shown on the splash screen and logged at boot |
-| `DISPLAY_SPLASH_MS` | How long the splash is held before measurements take the screen |
-| `DISPLAY_ADDRESSES`, `DISPLAY_MIN_INTERVAL_MS` | Which I2C addresses to probe, and the floor on redraw rate |
-| `DISPLAY_BRIGHTNESS_DEFAULT` | Panel contrast a factory-fresh unit starts at |
-| `WIFI_AP_SSID`, `WIFI_AP_PASSWORD` | The fallback access point |
-| `WIFI_HOSTNAME` | Also the mDNS name, so `decilight.local` follows it |
+| `FIRMWARE_VERSION`, `PRODUCT_NAME`                 | Shown on the splash screen and logged at boot                                                                    |
+| `DISPLAY_SPLASH_MS`                                | How long the splash is held before measurements take the screen                                                  |
+| `DISPLAY_ADDRESSES`, `DISPLAY_MIN_INTERVAL_MS`     | Which I2C addresses to probe, and the floor on redraw rate                                                       |
+| `DISPLAY_BRIGHTNESS_DEFAULT`                       | Panel contrast a factory-fresh unit starts at                                                                    |
+| `WIFI_AP_SSID`, `WIFI_AP_PASSWORD`                 | The fallback access point                                                                                        |
+| `WIFI_HOSTNAME`                                    | Also the mDNS name, so `decilight.local` follows it                                                              |
 
 Fitting a different microphone means setting the `MIC_*` values from its datasheet and pointing `MIC_EQUALIZER` at the matching filter. Coefficients for the ICS-43432, ICS-43434, IM69D130 and SPH0645LM4H-B are derived in `math/`.
 
@@ -300,14 +296,14 @@ Fitting a different microphone means setting the `MIC_*` values from its datashe
 
 Mapped for the 24-key NEC remote sold with cheap LED strips. Holding a key repeats it.
 
-| Key | Action |
-| --- | --- |
-| On | Return to automatic mode, colour follows the sound level |
-| Off | LEDs dark. Measurement continues |
-| Bright +/- | Brightness, in five steps. Persists across a power cycle |
-| Any colour key | Hold that colour, leaving automatic mode |
-| Flash / Strobe | Lower threshold up / down |
-| Fade / Smooth | Upper threshold up / down |
+| Key            | Action                                                   |
+| -------------- | -------------------------------------------------------- |
+| On             | Return to automatic mode, colour follows the sound level |
+| Off            | LEDs dark. Measurement continues                         |
+| Bright +/-     | Brightness, in five steps. Persists across a power cycle |
+| Any colour key | Hold that colour, leaving automatic mode                 |
+| Flash / Strobe | Lower threshold up / down                                |
+| Fade / Smooth  | Upper threshold up / down                                |
 
 Threshold changes blink the ring to confirm and print the new window to the serial console at 115200 baud. Thresholds are clamped so they can never cross or wrap, and are written to flash a few seconds after the last press, so holding a key costs one flash write rather than dozens.
 
